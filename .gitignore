@@ -1,0 +1,14 @@
+﻿.dotnet/
+**/bin/
+**/obj/
+artifacts/
+.vs/
+/AIIsland.exe
+
+# Local secrets and user-specific configuration
+**/settings.json
+**/balance-token.dat
+*.user
+*.suo
+.env
+.env.*
