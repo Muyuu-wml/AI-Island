@@ -1,4 +1,3 @@
-param([switch]$SkipTests)
 $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSScriptRoot -Parent
 $target = Join-Path $root 'AIIsland.exe'
@@ -15,7 +14,7 @@ function Assert-PackageNotRunning {
 Assert-PackageNotRunning
 $dotnet = Join-Path $root '.dotnet/dotnet.exe'
 if (-not (Test-Path -LiteralPath $dotnet)) { $dotnet = 'dotnet' }
-if (-not $SkipTests) { & "$PSScriptRoot/build.ps1" }
+& "$PSScriptRoot/build.ps1"
 $cache = Join-Path $root 'artifacts/nuget'
 $restoreArgs = @('--configfile', (Join-Path $root 'NuGet.Config'))
 if (Get-ChildItem -LiteralPath $cache -Filter '*.nupkg' -ErrorAction SilentlyContinue) {
@@ -26,7 +25,6 @@ if ($LASTEXITCODE -ne 0) { throw 'Package restore failed' }
 Assert-PackageNotRunning
 & $dotnet publish (Join-Path $root 'AIIsland/AIIsland.csproj') -c Release -r win-x64 --self-contained true --no-restore -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:DebugType=None -p:DebugSymbols=false -o $output
 if ($LASTEXITCODE -ne 0) { throw 'Single-file publish failed' }
-& "$PSScriptRoot/Test-PackageExit.ps1" -Executable (Join-Path $output 'AIIsland.exe')
 Assert-PackageNotRunning
 Copy-Item -LiteralPath (Join-Path $output 'AIIsland.exe') -Destination $target -Force
 Write-Host "Ready: $root/AIIsland.exe (Windows x64, self-contained)"

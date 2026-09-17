@@ -34,16 +34,15 @@ public partial class IslandWindow : Window
     private string outlineKey = "";
     private NativePoint pointerOrigin;
     private NativeRect windowOrigin;
-    public IslandWindow(bool inspection = false, Settings? initialSettings = null, Action<AiNotification>? notificationSink = null)
+    public IslandWindow()
     {
-        settings = initialSettings ?? SettingsService.Load();
+        settings = SettingsService.Load();
         RenderOptions.ProcessRenderMode = RenderMode.SoftwareOnly;
         InitializeComponent();
         ToolPanel.RenderTransform = drawerOffset;
         var contentClip = new RectangleGeometry { RadiusX = 23, RadiusY = 23 };
         RootPanel.Clip = contentClip;
         Capsule.SizeChanged += (_, e) => contentClip.Rect = new Rect(0, 0, Math.Max(0, e.NewSize.Width - 2), Math.Max(0, e.NewSize.Height - 2));
-        if (inspection) ShowInTaskbar = true;
         ViewModel = new(settings); DataContext = ViewModel;
         Capsule.MouseEnter += (_, _) => UpdateAppearance();
         Capsule.MouseLeave += (_, _) => UpdateAppearance();
@@ -53,13 +52,13 @@ public partial class IslandWindow : Window
         using (var iconStream = Application.GetResourceStream(iconUri).Stream)
         using (var loadedIcon = new System.Drawing.Icon(iconStream, Forms.SystemInformation.SmallIconSize))
             trayIcon = (System.Drawing.Icon)loadedIcon.Clone();
-        tray = new Forms.NotifyIcon { Text = "AI Island · Monitoring", Icon = trayIcon, Visible = notificationSink == null };
-        this.notificationSink = notificationSink ?? (notice => tray.ShowBalloonTip(4000, notice.Title, notice.Message, notice.Severity switch
+        tray = new Forms.NotifyIcon { Text = "AI Island · Monitoring", Icon = trayIcon, Visible = true };
+        notificationSink = notice => tray.ShowBalloonTip(4000, notice.Title, notice.Message, notice.Severity switch
         {
             AiNotificationSeverity.Warning => Forms.ToolTipIcon.Warning,
             AiNotificationSeverity.Error => Forms.ToolTipIcon.Error,
             _ => Forms.ToolTipIcon.Info
-        }));
+        });
         var menu = new Forms.ContextMenuStrip();
         menu.Items.Add("Show Island", null, (_, _) => Dispatcher.Invoke(Show));
         menu.Items.Add("Settings", null, (_, _) => Dispatcher.Invoke(OpenSettings));
@@ -78,10 +77,10 @@ public partial class IslandWindow : Window
         ViewModel.Ai.ApprovalRequested += NotifyAi;
         SourceInitialized += (_, _) => {
             var handle = new WindowInteropHelper(this).Handle;
-            if (!inspection) SetWindowLongPtr(handle, -20, new IntPtr(GetWindowLongPtr(handle, -20).ToInt64() | 0x08000000 | 0x80));
+            SetWindowLongPtr(handle, -20, new IntPtr(GetWindowLongPtr(handle, -20).ToInt64() | 0x08000000 | 0x80));
             HwndSource.FromHwnd(handle)?.AddHook(WindowProc);
             mouseHook = ObserveMouse;
-            if (!inspection) mouseHookHandle = SetWindowsHookEx(14, mouseHook, GetModuleHandle(null), 0);
+            mouseHookHandle = SetWindowsHookEx(14, mouseHook, GetModuleHandle(null), 0);
         };
         Loaded += async (_, _) => { Position(); ScheduleLayout(); await ViewModel.StartAsync(); };
         AddHandler(Expander.ExpandedEvent, new RoutedEventHandler((_, _) => ScheduleLayout()));
