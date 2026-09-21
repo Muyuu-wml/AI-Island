@@ -33,9 +33,10 @@ try
     var file = Path.Combine(directory, Guid.NewGuid().ToString("N"));
     string? Field(string name) => root.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String && v.GetString()!.Length <= 200 ? v.GetString() : null;
     var parent = ParentProcess.Find(args[0]);
+    var shell = ProcessLifetime.FindShell(parent.Id, parent.Started);
     var cwd = root.TryGetProperty("cwd", out var directoryValue) && directoryValue.ValueKind == JsonValueKind.String ? ProjectNames.Normalize(directoryValue.GetString()) : null;
     var transcript = args[0] == "Codex" && root.TryGetProperty("transcript_path", out var transcriptValue) && transcriptValue.ValueKind == JsonValueKind.String ? ProjectNames.Normalize(transcriptValue.GetString()) : null;
-    var value = new IslandEvent(args[0], id, eventName, at, parent.Id, parent.Started, Field("turn_id"), Field("tool_use_id"), cwd, transcript);
+    var value = new IslandEvent(args[0], id, eventName, at, parent.Id, parent.Started, Field("turn_id"), Field("tool_use_id"), cwd, transcript, shell.Id, shell.Started);
     File.WriteAllText(file + ".tmp", JsonSerializer.Serialize(value));
     File.Move(file + ".tmp", file + ".json");
     SessionRegistry.Remember(Path.Combine(directory, "sessions"), value);

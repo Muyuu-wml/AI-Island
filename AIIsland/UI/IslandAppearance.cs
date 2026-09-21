@@ -9,9 +9,10 @@ namespace AIIsland.UI;
 // Keep the original palette here so EnhancedOutline=false is a complete visual rollback.
 public static class IslandAppearance
 {
-    public static void Apply(Border capsule, bool enhanced, bool hover, string state, bool animate, bool rainbow = false, string palette = "Rainbow", string customColor = "#72D8EE", string mode = "Static", bool lightAnimation = true)
+    public static void Apply(Border capsule, bool enhanced, bool hover, string state, bool animate, bool rainbow = false, string palette = "Rainbow", string customColor = "#72D8EE", string mode = "Static", bool lightAnimation = true, double thickness = 1)
     {
         static Color ColorOf(string value) => (Color)ColorConverter.ConvertFromString(value);
+        capsule.BorderThickness = new System.Windows.Thickness(rainbow && double.IsFinite(thickness) ? Math.Clamp(thickness, 0.5, 6) : 1);
         capsule.Background = new SolidColorBrush(ColorOf(enhanced ? "#252B38" : "#F018191E"));
         capsule.BorderBrush = new SolidColorBrush(ColorOf(enhanced ? hover ? "#B4C6DF" : "#76839A" : "#FF34363F"));
         if (rainbow)

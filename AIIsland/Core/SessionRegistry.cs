@@ -1,5 +1,4 @@
 using System;
-using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Security.Cryptography;
@@ -16,12 +15,8 @@ public static class SessionRegistry
         if (value.Provider is not ("Codex" or "Claude") || string.IsNullOrWhiteSpace(value.SessionId) ||
             value.SessionId.Length > 200 || !value.ProcessId.HasValue || !value.ProcessStartedAt.HasValue ||
             value.Kind == "SessionEnd" || value.At > DateTimeOffset.UtcNow.AddSeconds(5)) return false;
-        try
-        {
-            using var process = Process.GetProcessById(value.ProcessId.Value);
-            return !process.HasExited && new DateTimeOffset(process.StartTime.ToUniversalTime()) == value.ProcessStartedAt;
-        }
-        catch (Exception e) when (e is ArgumentException or InvalidOperationException or System.ComponentModel.Win32Exception or NotSupportedException) { return false; }
+        return ProcessLifetime.CheckSession(value.ProcessId, value.ProcessStartedAt,
+            value.ShellProcessId, value.ShellProcessStartedAt) == ConnectionStatus.Online;
     }
 
     public static void Remember(string directory, IslandEvent value)
@@ -38,7 +33,8 @@ public static class SessionRegistry
             if (Directory.EnumerateFiles(directory, "*.json").Take(256).Count() >= 256) return;
         }
         var metadata = new IslandEvent(value.Provider, value.SessionId, "SessionStart", value.At,
-            value.ProcessId, value.ProcessStartedAt, WorkingDirectory: ProjectNames.Normalize(value.WorkingDirectory));
+            value.ProcessId, value.ProcessStartedAt, WorkingDirectory: ProjectNames.Normalize(value.WorkingDirectory),
+            ShellProcessId: value.ShellProcessId, ShellProcessStartedAt: value.ShellProcessStartedAt);
         var temporary = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
         try { File.WriteAllText(temporary, JsonSerializer.Serialize(metadata)); File.Move(temporary, path, true); }
         finally { if (File.Exists(temporary)) File.Delete(temporary); }

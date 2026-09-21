@@ -2,7 +2,6 @@ using System;
 using System.Collections.ObjectModel;
 using System.Collections.Generic;
 using System.Windows.Input;
-using System.Diagnostics;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -117,16 +116,14 @@ public sealed class AiModule : ModuleBase
         catch (Exception e) when (e is System.IO.IOException or UnauthorizedAccessException) { Note = "无法读取 AI 事件：" + e.Message; }
         foreach (var session in state.Sessions.Where(s => s.Connection != ConnectionStatus.Offline).ToArray())
         {
-            if (!session.ProcessId.HasValue || !session.ProcessStartedAt.HasValue) { session.Connection = ConnectionStatus.Unknown; continue; }
-            var ended = false;
-            try {
-                using var process = Process.GetProcessById(session.ProcessId.Value);
-                ended = process.HasExited || new DateTimeOffset(process.StartTime.ToUniversalTime()) != session.ProcessStartedAt;
-                if (!ended) session.Connection = ConnectionStatus.Online;
-            }
-            catch (Exception e) when (e is ArgumentException or InvalidOperationException) { ended = true; }
-            catch (System.ComponentModel.Win32Exception) { session.Connection = ConnectionStatus.Unknown; }
-            if (ended) state.Apply(new IslandEvent(session.Provider, session.SessionId, "SessionEnd", DateTimeOffset.UtcNow));
+            // Also enrich sessions written by older Hooks while their ancestry is available.
+            if (!session.ShellProcessId.HasValue)
+                (session.ShellProcessId, session.ShellProcessStartedAt) = ProcessLifetime.FindShell(session.ProcessId, session.ProcessStartedAt);
+            var connection = ProcessLifetime.CheckSession(session.ProcessId, session.ProcessStartedAt,
+                session.ShellProcessId, session.ShellProcessStartedAt);
+            if (connection == ConnectionStatus.Offline)
+                state.Apply(new IslandEvent(session.Provider, session.SessionId, "SessionEnd", DateTimeOffset.UtcNow));
+            else session.Connection = connection;
         }
         var now = DateTimeOffset.UtcNow;
         unlinkedCount = processes.Apps.Count(p =>

@@ -1,9 +1,12 @@
-﻿.dotnet/
+.dotnet/
 **/bin/
 **/obj/
 artifacts/
 .vs/
 /AIIsland.exe
+
+# Local additions for PowerShell exit monitoring
+/AIIsland/Core/ProcessLifetime.cs
 
 # Local secrets and user-specific configuration
 **/settings.json

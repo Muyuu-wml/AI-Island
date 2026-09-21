@@ -39,7 +39,19 @@ public sealed class SettingsWindow : Window
         var notification = Check("本轮结束或失败时显示右下角通知", current.Notifications);
         var approvalNotification = Check("等待确认时显示右下角通知", current.ApprovalNotifications ?? current.Notifications);
         var outline = Check("增强轮廓（蓝灰底色与光晕）", current.EnhancedOutline);
-        var rainbow = Check("启用 RGB 细灯条", current.RainbowOutline);
+        var rainbow = Check("启用 RGB 灯条", current.RainbowOutline);
+        var thicknessLabel = new TextBlock { Margin = new Thickness(0, 8, 0, 4) };
+        panel.Children.Add(thicknessLabel);
+        var thickness = new Slider { Minimum = 0.5, Maximum = 6, TickFrequency = 0.5, IsSnapToTickEnabled = true,
+            SmallChange = 0.5, LargeChange = 1, Value = current.OutlineThickness, IsEnabled = current.RainbowOutline,
+            ToolTip = "默认 1，范围 0.5–6；随系统显示缩放。" };
+        System.Windows.Automation.AutomationProperties.SetName(thickness, "灯条粗细");
+        void UpdateThicknessLabel() => thicknessLabel.Text = $"灯条粗细：{thickness.Value:0.#}（默认 1）";
+        thickness.ValueChanged += (_, _) => UpdateThicknessLabel();
+        rainbow.Checked += (_, _) => thickness.IsEnabled = true;
+        rainbow.Unchecked += (_, _) => thickness.IsEnabled = false;
+        UpdateThicknessLabel();
+        panel.Children.Add(thickness);
         panel.Children.Add(new TextBlock { Text = "灯条颜色", Margin = new Thickness(0, 8, 0, 4) });
         var palette = new ComboBox { ItemsSource = new[] { "彩虹色（默认）", "自定义单色" }, SelectedIndex = current.OutlinePalette == "Custom" ? 1 : 0 }; panel.Children.Add(palette);
         var color = new TextBox { Text = current.OutlineColor, ToolTip = "十六进制颜色，例如 #72D8EE", Margin = new Thickness(0, 6, 0, 6), IsEnabled = palette.SelectedIndex == 1 }; panel.Children.Add(color);
@@ -67,6 +79,7 @@ public sealed class SettingsWindow : Window
             value.MonitorOrder = monitors.Order;
             value.EnhancedOutline = outline.IsChecked == true;
             value.RainbowOutline = rainbow.IsChecked == true;
+            value.OutlineThickness = thickness.Value;
             value.OutlinePalette = palette.SelectedIndex == 1 ? "Custom" : "Rainbow";
             value.OutlineColor = IslandAppearance.IsHexColor(color.Text.Trim()) ? color.Text.Trim().ToUpperInvariant() : "#72D8EE";
             value.OutlineMode = mode.SelectedIndex == 1 ? "Marquee" : mode.SelectedIndex == 2 ? "Breathing" : "Static";

@@ -22,6 +22,8 @@ public static class LocalSecret
     }
 }
 
+public sealed record DailyUsage(decimal TodayCost);
+
 public sealed class BalanceService : IDisposable
 {
     private const string Origin = "https://xc.lifesecretary.com:8000";
@@ -35,6 +37,21 @@ public sealed class BalanceService : IDisposable
     }
     public async Task<decimal> ReadAsync(string email, string protectedPassword, CancellationToken cancellation)
     {
+        using var json = await GetAsync("/api/v1/auth/me?timezone=Asia%2FShanghai", email, protectedPassword, cancellation);
+        if (!json.RootElement.GetProperty("data").TryGetProperty("balance", out var balance) || !balance.TryGetDecimal(out var value))
+            throw new InvalidOperationException("接口未返回有效余额。");
+        return value;
+    }
+    public async Task<DailyUsage> ReadUsageAsync(string email, string protectedPassword, CancellationToken cancellation)
+    {
+        using var json = await GetAsync("/api/v1/usage/dashboard/stats?timezone=Asia%2FShanghai", email, protectedPassword, cancellation);
+        var data = json.RootElement.GetProperty("data");
+        if (!data.TryGetProperty("today_cost", out var cost) || cost.ValueKind != JsonValueKind.Number || !cost.TryGetDecimal(out var value))
+            throw new InvalidOperationException("接口未返回有效今日消耗。");
+        return new DailyUsage(value);
+    }
+    private async Task<JsonDocument> GetAsync(string path, string email, string protectedPassword, CancellationToken cancellation)
+    {
         var password = LocalSecret.Unprotect(protectedPassword);
         if (string.IsNullOrWhiteSpace(email) || password.Length == 0) throw new InvalidOperationException("请在设置中填写账户邮箱和密码。");
         var identity = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(email + "\n" + password)));
@@ -43,7 +60,7 @@ public sealed class BalanceService : IDisposable
         if (string.IsNullOrEmpty(token)) token = await LoginAsync(email, password, identity, cancellation);
         for (var attempt = 0; attempt < 2; attempt++)
         {
-            using var request = new HttpRequestMessage(HttpMethod.Get, Origin + "/api/v1/auth/me?timezone=Asia%2FShanghai");
+            using var request = new HttpRequestMessage(HttpMethod.Get, Origin + path);
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
             using var response = await client.SendAsync(request, cancellation);
             if (response.StatusCode == HttpStatusCode.Unauthorized)
@@ -52,12 +69,9 @@ public sealed class BalanceService : IDisposable
                 if (attempt == 0) { token = await LoginAsync(email, password, identity, cancellation); continue; }
                 throw new InvalidOperationException("登录已失效，请检查账号密码后手动刷新。");
             }
-            using var json = await ReadResponseAsync(response, cancellation);
-            if (!json.RootElement.GetProperty("data").TryGetProperty("balance", out var balance) || !balance.TryGetDecimal(out var value))
-                throw new InvalidOperationException("接口未返回有效余额。");
-            return value;
+            return await ReadResponseAsync(response, cancellation);
         }
-        throw new InvalidOperationException("无法获取余额。");
+        throw new InvalidOperationException("无法获取账户数据。");
     }
     private async Task<string> LoginAsync(string email, string password, string identity, CancellationToken cancellation)
     {

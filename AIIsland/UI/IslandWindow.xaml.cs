@@ -187,14 +187,16 @@ public partial class IslandWindow : Window
             var scale = VisualTreeHelper.GetDpi(this).DpiScaleY;
             var anchor = Anchor();
             var availableHeight = Math.Max(66, (area.Bottom - anchor.Y) / scale);
-            Header.Measure(new Size(width - 22, double.PositiveInfinity));
-            DrawerScroll.MaxHeight = Math.Max(0, Math.Min(area.Height / scale * .7, availableHeight) - Header.DesiredSize.Height - 30);
-            RootPanel.Measure(new Size(width - 22, double.PositiveInfinity));
-            Header.Measure(new Size(width - 22, double.PositiveInfinity));
-            AiCard.Measure(new Size(width - 42, double.PositiveInfinity));
-            ToolPanel.Measure(new Size(width - 42, double.PositiveInfinity));
+            var frameWidth = Capsule.Margin.Left + Capsule.Margin.Right + Capsule.BorderThickness.Left + Capsule.BorderThickness.Right;
+            var frameHeight = Capsule.Margin.Top + Capsule.Margin.Bottom + Capsule.BorderThickness.Top + Capsule.BorderThickness.Bottom;
+            Header.Measure(new Size(width - frameWidth, double.PositiveInfinity));
+            DrawerScroll.MaxHeight = Math.Max(0, Math.Min(area.Height / scale * .7, availableHeight) - Header.DesiredSize.Height - frameHeight - 8);
+            RootPanel.Measure(new Size(width - frameWidth, double.PositiveInfinity));
+            Header.Measure(new Size(width - frameWidth, double.PositiveInfinity));
+            AiCard.Measure(new Size(width - frameWidth - 20, double.PositiveInfinity));
+            ToolPanel.Measure(new Size(width - frameWidth - 20, double.PositiveInfinity));
             var bodyHeight = (ViewModel.AiExpanded ? AiCard.DesiredSize.Height : 0) + (drawerRequested ? ToolPanel.DesiredSize.Height : 0);
-            var height = Math.Max(66, Header.DesiredSize.Height + 22 + (bodyHeight > 0 ? Math.Min(bodyHeight, DrawerScroll.MaxHeight) + 8 : 0));
+            var height = Math.Max(66, Header.DesiredSize.Height + frameHeight + (bodyHeight > 0 ? Math.Min(bodyHeight, DrawerScroll.MaxHeight) + 8 : 0));
             Animate(HeightProperty, Math.Min(height, availableHeight)); Position();
             if (enterPending && drawerRequested)
             {
@@ -210,12 +212,12 @@ public partial class IslandWindow : Window
             : ViewModel.Ai.Groups.SelectMany(g => g.Rows).Any(r => r.Status.Contains("Failed")) ? "failed"
             : ViewModel.Ai.ActiveCount > 0 ? "running" : "idle";
         var lightKey = $"{settings.RainbowOutline}:{settings.OutlinePalette}:{settings.OutlineColor}:{settings.OutlineMode}:{settings.Animation}";
-        var key = $"{settings.EnhancedOutline}:{lightKey}:{Capsule.IsMouseOver}:{state}";
+        var key = $"{settings.EnhancedOutline}:{lightKey}:{settings.OutlineThickness}:{Capsule.IsMouseOver}:{state}";
         if (key == appearanceKey) return;
         var changed = state != appearanceState;
         appearanceKey = key; appearanceState = state;
         var previousBrush = Capsule.BorderBrush;
-        IslandAppearance.Apply(Capsule, settings.EnhancedOutline, Capsule.IsMouseOver, state, settings.Animation && changed, settings.RainbowOutline, settings.OutlinePalette, settings.OutlineColor, settings.OutlineMode, settings.Animation);
+        IslandAppearance.Apply(Capsule, settings.EnhancedOutline, Capsule.IsMouseOver, state, settings.Animation && changed, settings.RainbowOutline, settings.OutlinePalette, settings.OutlineColor, settings.OutlineMode, settings.Animation, settings.OutlineThickness);
         if (settings.RainbowOutline && outlineKey == lightKey) Capsule.BorderBrush = previousBrush;
         outlineKey = lightKey;
     }

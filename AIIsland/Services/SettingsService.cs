@@ -23,6 +23,12 @@ public sealed class Settings
     public string OutlinePalette { get; set; } = "Rainbow";
     public string OutlineColor { get; set; } = "#72D8EE";
     public string OutlineMode { get; set; } = "Static";
+    private double outlineThickness = 1;
+    public double OutlineThickness
+    {
+        get => outlineThickness;
+        set => outlineThickness = double.IsFinite(value) ? Math.Clamp(value, 0.5, 6) : 1;
+    }
     public bool Notifications { get; set; } = true;
     // Legacy Notifications controlled approval reminders too; inherit it until saved separately.
     public bool? ApprovalNotifications { get; set; }

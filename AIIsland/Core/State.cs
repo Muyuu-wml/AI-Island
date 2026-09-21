@@ -7,7 +7,7 @@ namespace AIIsland.Core;
 
 public enum AIStatus { Idle, Thinking, Executing, WaitingForApproval, Completed, Failed, Ended }
 public enum ConnectionStatus { Online, Offline, Unknown }
-public sealed record IslandEvent(string Provider, string SessionId, string Kind, DateTimeOffset At, int? ProcessId = null, DateTimeOffset? ProcessStartedAt = null, string? TurnId = null, string? ToolId = null, string? WorkingDirectory = null, string? TranscriptPath = null);
+public sealed record IslandEvent(string Provider, string SessionId, string Kind, DateTimeOffset At, int? ProcessId = null, DateTimeOffset? ProcessStartedAt = null, string? TurnId = null, string? ToolId = null, string? WorkingDirectory = null, string? TranscriptPath = null, int? ShellProcessId = null, DateTimeOffset? ShellProcessStartedAt = null);
 public sealed class AIProcess
 {
     public required string Provider { get; init; }
@@ -19,6 +19,8 @@ public sealed class AIProcess
     public DateTimeOffset? EndedAt { get; set; }
     public int? ProcessId { get; set; }
     public DateTimeOffset? ProcessStartedAt { get; set; }
+    public int? ShellProcessId { get; set; }
+    public DateTimeOffset? ShellProcessStartedAt { get; set; }
     public string? TurnId { get; set; }
     public string? WorkingDirectory { get; set; }
     public string? TranscriptPath { get; set; }
@@ -68,6 +70,7 @@ public sealed class IslandState
         if (s.Provider == "Codex" && ProjectNames.Normalize(e.TranscriptPath) is { } transcript) s.TranscriptPath = transcript;
         s.Connection = e.Kind == "SessionEnd" ? ConnectionStatus.Offline : ConnectionStatus.Online;
         if (e.ProcessId.HasValue && e.ProcessStartedAt.HasValue) { s.ProcessId = e.ProcessId; s.ProcessStartedAt = e.ProcessStartedAt; }
+        if (e.ShellProcessId.HasValue && e.ShellProcessStartedAt.HasValue) { s.ShellProcessId = e.ShellProcessId; s.ShellProcessStartedAt = e.ShellProcessStartedAt; }
         if (e.Kind == "SessionEnd" && !s.Active) return true;
         if (e.Kind == "SessionStart" && s.Active) return false;
         if (!s.Active && e.Kind is "PostToolUse" or "PostToolUseFailure" or "Stop" or "StopFailure" or "SessionEnd" or "Interrupt") return false;

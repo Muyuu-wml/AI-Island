@@ -95,9 +95,21 @@
    <Border Style="{StaticResource Card}" Visibility="{Binding IsVisible, Converter={StaticResource BoolVisibility}}">
     <Expander Header="账户余额" IsExpanded="{Binding IsExpanded}">
      <StackPanel Margin="0,10,0,0">
-      <TextBlock Text="{Binding Balance}" FontSize="26" Foreground="#81E4BA"/>
-      <TextBlock Text="{Binding Status}" FontSize="11" Foreground="#B6C6DE" TextWrapping="Wrap" Margin="0,6,0,10"/>
-      <Button Content="刷新余额" Command="{Binding Refresh}" HorizontalAlignment="Left"/>
+      <Grid Margin="0,2,0,12">
+       <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="25"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+       <StackPanel>
+        <TextBlock Text="可用余额" FontSize="11" Foreground="#9CA8BA"/>
+        <TextBlock Text="{Binding Balance}" FontSize="24" Foreground="#81E4BA" Margin="0,4,0,0"/>
+        <TextBlock Text="{Binding Status}" FontSize="10" Foreground="#B6C6DE" TextWrapping="Wrap" Margin="0,5,0,0"/>
+       </StackPanel>
+       <Border Grid.Column="1" Width="1" Background="#394252" Margin="0,3"/>
+       <StackPanel Grid.Column="2">
+        <TextBlock Text="今日消耗" FontSize="11" Foreground="#9CA8BA"/>
+        <TextBlock Text="{Binding TodayCost}" FontSize="24" Foreground="#E8BD78" Margin="0,4,0,0"/>
+        <TextBlock Text="{Binding UsageStatus}" FontSize="10" Foreground="#B6C6DE" TextWrapping="Wrap" Margin="0,5,0,0"/>
+       </StackPanel>
+      </Grid>
+      <Button Content="刷新余额与消耗" Command="{Binding Refresh}" HorizontalAlignment="Left"/>
      </StackPanel>
     </Expander>
    </Border>
