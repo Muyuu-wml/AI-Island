@@ -7,11 +7,12 @@ namespace AIIsland.Core;
 
 public enum AIStatus { Idle, Thinking, Executing, WaitingForApproval, Completed, Failed, Ended }
 public enum ConnectionStatus { Online, Offline, Unknown }
-public sealed record IslandEvent(string Provider, string SessionId, string Kind, DateTimeOffset At, int? ProcessId = null, DateTimeOffset? ProcessStartedAt = null, string? TurnId = null, string? ToolId = null, string? WorkingDirectory = null, string? TranscriptPath = null, int? ShellProcessId = null, DateTimeOffset? ShellProcessStartedAt = null);
+public sealed record IslandEvent(string Provider, string SessionId, string Kind, DateTimeOffset At, int? ProcessId = null, DateTimeOffset? ProcessStartedAt = null, string? TurnId = null, string? ToolId = null, string? WorkingDirectory = null, string? TranscriptPath = null, int? ShellProcessId = null, DateTimeOffset? ShellProcessStartedAt = null, string? AgentId = null);
 public sealed class AIProcess
 {
     public required string Provider { get; init; }
     public required string SessionId { get; init; }
+    public string? AgentId { get; init; }
     public AIStatus Status { get; set; }
     public bool AwaitingState { get; set; }
     public DateTimeOffset StartedAt { get; set; }
@@ -51,18 +52,19 @@ public sealed class IslandState
             "PreToolUse" => AIStatus.Executing, "PostToolUse" or "PostToolUseFailure" => AIStatus.Thinking,
             "PermissionRequest" => AIStatus.WaitingForApproval, "Stop" => AIStatus.Completed,
             "StopFailure" => AIStatus.Failed, "SessionEnd" or "Interrupt" => AIStatus.Ended,
+            "SubagentStart" => AIStatus.Thinking, "SubagentStop" => AIStatus.Completed,
             _ => (AIStatus?)null
         };
         if (next is null) return false;
-        var key = e.Provider + ":" + e.SessionId;
+        var key = Key(e.Provider, e.SessionId, e.AgentId);
         if (!sessions.TryGetValue(key, out var s))
         {
             if (sessions.Count >= 256) return false;
-            sessions[key] = s = new AIProcess { Provider = e.Provider, SessionId = e.SessionId, StartedAt = e.At };
+            sessions[key] = s = new AIProcess { Provider = e.Provider, SessionId = e.SessionId, AgentId = CleanAgentId(e.AgentId), StartedAt = e.At };
         }
         if (e.At <= s.LastEventAt) return false;
         if (e.Kind is "PreToolUse" or "PermissionRequest" && e.TurnId != null && e.TurnId == s.ReconciledTurnId) return false;
-        if (s.Connection == ConnectionStatus.Offline && e.Kind is not ("SessionStart" or "UserPromptSubmit")) return false;
+        if (s.Connection == ConnectionStatus.Offline && e.Kind is not ("SessionStart" or "UserPromptSubmit" or "SubagentStart")) return false;
         if (e.Kind != "UserPromptSubmit" && e.TurnId != null && s.TurnId != null && e.TurnId != s.TurnId) return false;
         s.LastEventAt = e.At;
         s.AwaitingState = false;
@@ -74,7 +76,7 @@ public sealed class IslandState
         if (e.Kind == "SessionEnd" && !s.Active) return true;
         if (e.Kind == "SessionStart" && s.Active) return false;
         if (!s.Active && e.Kind is "PostToolUse" or "PostToolUseFailure" or "Stop" or "StopFailure" or "SessionEnd" or "Interrupt") return false;
-        if (e.Kind == "UserPromptSubmit" || (!s.Active && next is AIStatus.Executing or AIStatus.WaitingForApproval))
+        if (e.Kind is "UserPromptSubmit" or "SubagentStart" || (!s.Active && next is AIStatus.Executing or AIStatus.WaitingForApproval))
         { s.StartedAt = e.At; s.EndedAt = null; s.ActiveTools.Clear(); s.TurnId = e.TurnId; s.ReconciledTurnId = null; }
         if (e.Kind == "PreToolUse" && e.ToolId != null) s.ActiveTools.Add(e.ToolId);
         if (e.Kind is "PostToolUse" or "PostToolUseFailure")
@@ -85,10 +87,8 @@ public sealed class IslandState
     }
     public bool ReconcileCompletion(IslandEvent e)
     {
-        // Only an explicit record for the active turn can repair a missing Hook.
-        // Hook receipt time may be later than the CLI's completion timestamp.
         if (e.Provider != "Codex" || e.Kind is not ("Stop" or "Interrupt") || string.IsNullOrEmpty(e.TurnId) ||
-            !sessions.TryGetValue(e.Provider + ":" + e.SessionId, out var s) || !s.Active ||
+            !sessions.TryGetValue(Key(e.Provider, e.SessionId, e.AgentId), out var s) || !s.Active ||
             s.TurnId != e.TurnId || e.At < s.StartedAt || e.At > DateTimeOffset.UtcNow.AddSeconds(5)) return false;
         s.Status = e.Kind == "Stop" ? AIStatus.Completed : AIStatus.Ended;
         s.EndedAt = e.At;
@@ -102,6 +102,8 @@ public sealed class IslandState
         foreach (var key in sessions.Where(x => x.Value.Connection == ConnectionStatus.Offline && !x.Value.Active && now - x.Value.LastEventAt > TimeSpan.FromHours(1)).Select(x => x.Key).ToArray()) sessions.Remove(key);
     }
     public AIProcess[] Visible(DateTimeOffset now) => sessions.Values.Where(s => s.Active || (s.EndedAt.HasValue && now - s.EndedAt.Value < TimeSpan.FromSeconds(3))).OrderBy(s => s.StartedAt).ToArray();
+    public static string Key(string provider, string sessionId, string? agentId) => provider + ":" + sessionId + (string.IsNullOrWhiteSpace(agentId) ? "" : ":agent:" + agentId);
+    private static string? CleanAgentId(string? value) => string.IsNullOrWhiteSpace(value) || value.Length > 200 ? null : value;
 }
 public static class ProjectNames
 {
@@ -124,6 +126,6 @@ public static class ProjectNames
             while (length < session.SessionId.Length && sameName.Any(x => x != session && x.SessionId.StartsWith(session.SessionId[..length], StringComparison.Ordinal))) length = Math.Min(length + 4, session.SessionId.Length);
             label += " · " + session.SessionId[..length];
         }
-        return label;
+        return session.AgentId is { Length: > 0 } agent ? label + " · agent " + agent[..Math.Min(8, agent.Length)] : label;
     }
 }

@@ -13,7 +13,7 @@ public static class SessionRegistry
     public static bool IsAlive(IslandEvent value)
     {
         if (value.Provider is not ("Codex" or "Claude") || string.IsNullOrWhiteSpace(value.SessionId) ||
-            value.SessionId.Length > 200 || !value.ProcessId.HasValue || !value.ProcessStartedAt.HasValue ||
+            value.SessionId.Length > 200 || value.AgentId is { Length: > 200 } || !value.ProcessId.HasValue || !value.ProcessStartedAt.HasValue ||
             value.Kind == "SessionEnd" || value.At > DateTimeOffset.UtcNow.AddSeconds(5)) return false;
         return ProcessLifetime.CheckSession(value.ProcessId, value.ProcessStartedAt,
             value.ShellProcessId, value.ShellProcessStartedAt) == ConnectionStatus.Online;
@@ -21,10 +21,10 @@ public static class SessionRegistry
 
     public static void Remember(string directory, IslandEvent value)
     {
-        if (value.Provider is not ("Codex" or "Claude") || string.IsNullOrWhiteSpace(value.SessionId) || value.SessionId.Length > 200) return;
-        var key = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value.Provider + ":" + value.SessionId)));
+        if (value.Provider is not ("Codex" or "Claude") || string.IsNullOrWhiteSpace(value.SessionId) || value.SessionId.Length > 200 || value.AgentId is { Length: > 200 }) return;
+        var key = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value.Provider + ":" + value.SessionId + ":" + value.AgentId)));
         var path = Path.Combine(directory, key + ".json");
-        if (value.Kind == "SessionEnd") { if (File.Exists(path)) File.Delete(path); return; }
+        if (value.Kind is "SessionEnd" or "SubagentStop") { if (File.Exists(path)) File.Delete(path); return; }
         if (!IsAlive(value)) return;
         Directory.CreateDirectory(directory);
         if (!File.Exists(path) && Directory.EnumerateFiles(directory, "*.json").Take(256).Count() >= 256)
@@ -34,7 +34,7 @@ public static class SessionRegistry
         }
         var metadata = new IslandEvent(value.Provider, value.SessionId, "SessionStart", value.At,
             value.ProcessId, value.ProcessStartedAt, WorkingDirectory: ProjectNames.Normalize(value.WorkingDirectory),
-            ShellProcessId: value.ShellProcessId, ShellProcessStartedAt: value.ShellProcessStartedAt);
+            ShellProcessId: value.ShellProcessId, ShellProcessStartedAt: value.ShellProcessStartedAt, AgentId: value.AgentId);
         var temporary = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
         try { File.WriteAllText(temporary, JsonSerializer.Serialize(metadata)); File.Move(temporary, path, true); }
         finally { if (File.Exists(temporary)) File.Delete(temporary); }

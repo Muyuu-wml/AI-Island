@@ -12,6 +12,7 @@ namespace AIIsland.Modules;
 public sealed class AiRow : Observable
 {
     public string SessionId { get; }
+    public string? AgentId { get; }
     private string project = "", status = "", elapsed = "", details = "", connection = "";
     private bool expanded;
     private AIProcess? process;
@@ -25,9 +26,9 @@ public sealed class AiRow : Observable
     public string Details { get => details; private set => Set(ref details, value); }
     public string Connection { get => connection; private set => Set(ref connection, value); }
     public bool IsExpanded { get => expanded; set => Set(ref expanded, value); }
-    public AiRow(string session)
+    public AiRow(string session, string? agentId)
     {
-        SessionId = session;
+        SessionId = session; AgentId = agentId;
         OpenTerminal = new RelayCommand(() => { NavigationNote = TerminalNavigator.Open(process?.ProcessId, process?.ProcessStartedAt); if (NavigationNote.Length > 0) IsExpanded = true; });
     }
     public void Update(AIProcess s, string label, DateTimeOffset now)
@@ -89,11 +90,11 @@ public sealed class AiModule : ModuleBase
         this.settings = settings; IsVisible = true;
         bus.Received += e => {
             if (Paused || e.At < acceptAfter || e.Provider == "Codex" && !this.settings.Codex || e.Provider == "Claude" && !this.settings.Claude) return;
-            var wasWaiting = state.Sessions.Any(s => s.Provider == e.Provider && s.SessionId == e.SessionId && s.Status == AIStatus.WaitingForApproval);
+            var wasWaiting = state.Sessions.Any(s => s.Provider == e.Provider && s.SessionId == e.SessionId && s.AgentId == e.AgentId && s.Status == AIStatus.WaitingForApproval);
             if (state.Apply(e))
             {
                 lastSignals[e.Provider] = e.At;
-                var session = state.Sessions.First(s => s.Provider == e.Provider && s.SessionId == e.SessionId);
+                var session = state.Sessions.First(s => s.Provider == e.Provider && s.SessionId == e.SessionId && s.AgentId == e.AgentId);
                 var notification = e with { WorkingDirectory = session.WorkingDirectory };
                 if (e.Kind is "Stop" or "StopFailure") Completed?.Invoke(notification);
                 if (e.Kind == "PermissionRequest" && !wasWaiting) ApprovalRequested?.Invoke(notification);
@@ -105,9 +106,9 @@ public sealed class AiModule : ModuleBase
     private void Recover(IslandEvent value)
     {
         if (!startupRecovery || Paused || value.Provider == "Codex" && !settings.Codex || value.Provider == "Claude" && !settings.Claude ||
-            state.Sessions.Any(s => s.Provider == value.Provider && s.SessionId == value.SessionId)) return;
+            state.Sessions.Any(s => s.Provider == value.Provider && s.SessionId == value.SessionId && s.AgentId == value.AgentId)) return;
         if (state.Apply(value with { Kind = "SessionStart", TurnId = null, ToolId = null, TranscriptPath = null }))
-            state.Sessions.First(s => s.Provider == value.Provider && s.SessionId == value.SessionId).AwaitingState = true;
+            state.Sessions.First(s => s.Provider == value.Provider && s.SessionId == value.SessionId && s.AgentId == value.AgentId).AwaitingState = true;
     }
     public override Task RefreshAsync(ProcessSnapshot processes, CancellationToken token)
     {
@@ -157,11 +158,11 @@ public sealed class AiModule : ModuleBase
             var group = Groups.FirstOrDefault(g => g.Name == provider);
             if (sessions.Length == 0) { if (group != null) Groups.Remove(group); continue; }
             if (group == null) { group = new AiGroup(provider); Groups.Add(group); }
-            foreach (var old in group.Rows.Where(r => sessions.All(s => s.SessionId != r.SessionId)).ToArray()) group.Rows.Remove(old);
+            foreach (var old in group.Rows.Where(r => sessions.All(s => s.SessionId != r.SessionId || s.AgentId != r.AgentId)).ToArray()) group.Rows.Remove(old);
             foreach (var session in sessions)
             {
-                var row = group.Rows.FirstOrDefault(r => r.SessionId == session.SessionId);
-                if (row == null) { row = new AiRow(session.SessionId); group.Rows.Add(row); }
+                var row = group.Rows.FirstOrDefault(r => r.SessionId == session.SessionId && r.AgentId == session.AgentId);
+                if (row == null) { row = new AiRow(session.SessionId, session.AgentId); group.Rows.Add(row); }
                 row.Update(session, ProjectNames.Display(session, sessions), now);
             }
         }
