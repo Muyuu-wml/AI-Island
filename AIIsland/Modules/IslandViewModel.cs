@@ -15,6 +15,7 @@ public sealed class IslandViewModel : Observable, IDisposable
     private readonly DispatcherTimer aiTimer = new() { Interval = TimeSpan.FromMilliseconds(500) };
     private readonly IIslandModule[] modules;
     private bool refreshing, drawerOpen;
+    private ProcessSnapshot latestProcesses = new(Array.Empty<AppProcess>());
     public AiModule Ai { get; }
     public QQMusicModule Music { get; } = new();
     public NetEaseMusicModule NetEaseMusic { get; } = new();
@@ -35,7 +36,7 @@ public sealed class IslandViewModel : Observable, IDisposable
         Ai = new(settings); modules = new IIslandModule[] { Ai, Resources, Music, NetEaseMusic, Clash, Balance }; Configure(settings);
         foreach (var module in modules) module.PropertyChanged += (_, _) => { Changed(nameof(Heading)); Changed(nameof(AiExpanded)); Changed(nameof(BodyVisible)); Changed(nameof(ShowResourceCompact)); LayoutChanged?.Invoke(); };
         timer.Tick += async (_, _) => await RefreshAsync();
-        aiTimer.Tick += async (_, _) => { if (!lifetime.IsCancellationRequested) await Ai.RefreshAsync(new ProcessSnapshot(Array.Empty<AppProcess>()), lifetime.Token); };
+        aiTimer.Tick += async (_, _) => { if (!lifetime.IsCancellationRequested) await Ai.RefreshAsync(latestProcesses, lifetime.Token); };
     }
     public async Task StartAsync()
     {
@@ -64,6 +65,7 @@ public sealed class IslandViewModel : Observable, IDisposable
         try
         {
             var snapshot = await discovery.ReadAsync(lifetime.Token);
+            latestProcesses = snapshot;
             await Task.WhenAll(modules.Where(m => m != Ai).Select(m => m.RefreshAsync(snapshot, lifetime.Token)));
             Changed(nameof(ShowCompact)); LayoutChanged?.Invoke();
         }

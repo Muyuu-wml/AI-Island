@@ -46,9 +46,10 @@ public sealed class IslandState
     { foreach (var key in sessions.Where(x => x.Value.Provider == provider).Select(x => x.Key).ToArray()) sessions.Remove(key); }
     public bool Apply(IslandEvent e)
     {
-        if (e.Provider is not ("Codex" or "Claude") || string.IsNullOrWhiteSpace(e.SessionId) || e.SessionId.Length > 200) return false;
+        if (e.Provider is not ("Codex" or "Claude" or "OpenCode") || string.IsNullOrWhiteSpace(e.SessionId) || e.SessionId.Length > 200) return false;
         var next = e.Kind switch {
             "SessionStart" => AIStatus.Idle, "UserPromptSubmit" => AIStatus.Thinking,
+            "Thinking" when e.Provider == "OpenCode" => AIStatus.Thinking,
             "PreToolUse" => AIStatus.Executing, "PostToolUse" or "PostToolUseFailure" => AIStatus.Thinking,
             "PermissionRequest" => AIStatus.WaitingForApproval, "Stop" => AIStatus.Completed,
             "StopFailure" => AIStatus.Failed, "SessionEnd" or "Interrupt" => AIStatus.Ended,
@@ -64,11 +65,11 @@ public sealed class IslandState
         }
         if (e.At <= s.LastEventAt) return false;
         if (e.Kind is "PreToolUse" or "PermissionRequest" && e.TurnId != null && e.TurnId == s.ReconciledTurnId) return false;
-        if (s.Connection == ConnectionStatus.Offline && e.Kind is not ("SessionStart" or "UserPromptSubmit" or "SubagentStart")) return false;
+        if (s.Connection == ConnectionStatus.Offline && e.Kind is not ("SessionStart" or "UserPromptSubmit" or "SubagentStart") && !(e.Provider == "OpenCode" && e.Kind is "Thinking" or "PreToolUse" or "PermissionRequest")) return false;
         if (e.Kind != "UserPromptSubmit" && e.TurnId != null && s.TurnId != null && e.TurnId != s.TurnId) return false;
         s.LastEventAt = e.At;
         s.AwaitingState = false;
-        if (s.WorkingDirectory == null) s.WorkingDirectory = ProjectNames.Normalize(e.WorkingDirectory);
+        if (s.WorkingDirectory == null || s.Provider == "OpenCode") s.WorkingDirectory = ProjectNames.Normalize(e.WorkingDirectory) ?? s.WorkingDirectory;
         if (s.Provider == "Codex" && ProjectNames.Normalize(e.TranscriptPath) is { } transcript) s.TranscriptPath = transcript;
         s.Connection = e.Kind == "SessionEnd" ? ConnectionStatus.Offline : ConnectionStatus.Online;
         if (e.ProcessId.HasValue && e.ProcessStartedAt.HasValue) { s.ProcessId = e.ProcessId; s.ProcessStartedAt = e.ProcessStartedAt; }
@@ -76,7 +77,7 @@ public sealed class IslandState
         if (e.Kind == "SessionEnd" && !s.Active) return true;
         if (e.Kind == "SessionStart" && s.Active) return false;
         if (!s.Active && e.Kind is "PostToolUse" or "PostToolUseFailure" or "Stop" or "StopFailure" or "SessionEnd" or "Interrupt") return false;
-        if (e.Kind is "UserPromptSubmit" or "SubagentStart" || (!s.Active && next is AIStatus.Executing or AIStatus.WaitingForApproval))
+        if (e.Kind is "UserPromptSubmit" or "SubagentStart" || (!s.Active && next is AIStatus.Thinking or AIStatus.Executing or AIStatus.WaitingForApproval))
         { s.StartedAt = e.At; s.EndedAt = null; s.ActiveTools.Clear(); s.TurnId = e.TurnId; s.ReconciledTurnId = null; }
         if (e.Kind == "PreToolUse" && e.ToolId != null) s.ActiveTools.Add(e.ToolId);
         if (e.Kind is "PostToolUse" or "PostToolUseFailure")

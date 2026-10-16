@@ -13,6 +13,7 @@ public sealed class SettingsWindow : Window
         CheckBox Check(string text, bool value) { var c = new CheckBox { Content = text, IsChecked = value, Margin = new Thickness(0, 6, 0, 6) }; panel.Children.Add(c); return c; }
         panel.Children.Add(new TextBlock { Text = "AI Agent · 固定置顶", FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, 0, 0, 4) });
         var codex = Check("Codex", current.Codex); var claude = Check("Claude", current.Claude);
+        var openCode = Check("OpenCode", current.OpenCode);
         panel.Children.Add(new TextBlock { Text = "其他监控 · 显示顺序", FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, 16, 0, 4) });
         panel.Children.Add(new TextBlock { Text = "勾选显示，用右侧箭头调整页面顺序。", FontSize = 11, Margin = new Thickness(0, 0, 0, 6) });
         var monitors = new MonitorOrderEditor(current);
@@ -36,6 +37,7 @@ public sealed class SettingsWindow : Window
         panel.Children.Add(new TextBlock { Text = "启用上方“账户余额”后生效。密码和 token 在本机加密保存；token 过期自动重新登录。", TextWrapping = TextWrapping.Wrap, FontSize = 11 });
         panel.Children.Add(new TextBlock { Text = "通用设置", FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, 18, 0, 4) });
         var animation = Check("启用动画", current.Animation);
+        var edgeTrigger = Check("边缘触发（平时隐藏，推到屏幕顶部显示）", current.EdgeTrigger);
         var notification = Check("本轮结束或失败时显示右下角通知", current.Notifications);
         var approvalNotification = Check("等待确认时显示右下角通知", current.ApprovalNotifications ?? current.Notifications);
         var outline = Check("增强轮廓（蓝灰底色与光晕）", current.EnhancedOutline);
@@ -68,7 +70,9 @@ public sealed class SettingsWindow : Window
             { MessageBox.Show(this, "刷新间隔请输入 0，或 10–86400 秒。", "账户余额"); return; }
             if (palette.SelectedIndex == 1 && !IslandAppearance.IsHexColor(color.Text.Trim())) { MessageBox.Show(this, "请输入 # 加 6 位十六进制颜色，例如 #72D8EE。", "灯条颜色"); return; }
             var value = new Settings { Codex = codex.IsChecked == true, Claude = claude.IsChecked == true, Animation = animation.IsChecked == true, Notifications = notification.IsChecked == true, StartWithWindows = startup.IsChecked == true, Position = position.SelectedItem as string ?? "Center" };
+            value.EdgeTrigger = edgeTrigger.IsChecked == true;
             value.ApprovalNotifications = approvalNotification.IsChecked == true;
+            value.OpenCode = openCode.IsChecked == true;
             value.BalanceEnabled = monitors.IsMonitorEnabled("balance");
             value.BalanceEmail = balanceEmail.Text.Trim();
             value.BalanceRefreshSeconds = refreshSeconds;

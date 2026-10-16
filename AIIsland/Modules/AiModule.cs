@@ -29,7 +29,7 @@ public sealed class AiRow : Observable
     public AiRow(string session, string? agentId)
     {
         SessionId = session; AgentId = agentId;
-        OpenTerminal = new RelayCommand(() => { NavigationNote = TerminalNavigator.Open(process?.ProcessId, process?.ProcessStartedAt); if (NavigationNote.Length > 0) IsExpanded = true; });
+        OpenTerminal = new RelayCommand(() => { NavigationNote = process?.Provider == "OpenCode" ? "OpenCode 会话由后台服务托管，请在 OpenCode 中选择对应会话。" : TerminalNavigator.Open(process?.ProcessId, process?.ProcessStartedAt); if (NavigationNote.Length > 0) IsExpanded = true; });
     }
     public void Update(AIProcess s, string label, DateTimeOffset now)
     {
@@ -69,8 +69,8 @@ public sealed class AiModule : ModuleBase
     private int unlinkedCount;
     private bool startupRecovery = true;
     private readonly Dictionary<string, DateTimeOffset> lastSignals = new();
-    public string IntegrationStatus => string.Join("\n", new[] { Integration("Codex", settings.Codex), Integration("Claude", settings.Claude) });
-    private string Integration(string provider, bool enabled) => provider + " · " + (!enabled ? "已禁用" : Paused ? "监控已暂停" : lastSignals.TryGetValue(provider, out var time) ? "已收到事件 · 最近 " + time.LocalDateTime.ToString("MM-dd HH:mm:ss") : state.Sessions.Any(s => s.Provider == provider && s.Connection == ConnectionStatus.Online) ? "已恢复在线会话 · 等待新 Hook 同步任务状态" : "尚未收到事件 · 请安装 Hook，并在已有 CLI 中提交任务；首次安装 Hook 后需重启 CLI");
+    public string IntegrationStatus => string.Join("\n", new[] { Integration("Codex", settings.Codex), Integration("Claude", settings.Claude), Integration("OpenCode", settings.OpenCode) });
+    private string Integration(string provider, bool enabled) => provider + " · " + (!enabled ? "已禁用" : Paused ? "监控已暂停" : lastSignals.TryGetValue(provider, out var time) ? "已收到事件 · 最近 " + time.LocalDateTime.ToString("MM-dd HH:mm:ss") : state.Sessions.Any(s => s.Provider == provider && s.Connection == ConnectionStatus.Online) ? "已恢复在线会话 · 等待新事件同步任务状态" : provider == "OpenCode" ? "尚未收到事件 · 请安装 OpenCode V2 插件并提交任务；必要时重启 OpenCode 服务" : "尚未收到事件 · 请安装 Hook，并在已有 CLI 中提交任务；首次安装 Hook 后需重启 CLI");
     public bool NeedsAttention => state.Sessions.Any(s => s.Status == AIStatus.WaitingForApproval);
     public string AccentColor => NeedsAttention ? "#F3BD65" : "#81E4BA";
     public override string Id => "ai";
@@ -89,7 +89,7 @@ public sealed class AiModule : ModuleBase
         this.inbox = inbox ?? new EventInbox();
         this.settings = settings; IsVisible = true;
         bus.Received += e => {
-            if (Paused || e.At < acceptAfter || e.Provider == "Codex" && !this.settings.Codex || e.Provider == "Claude" && !this.settings.Claude) return;
+            if (Paused || e.At < acceptAfter || !Enabled(e.Provider)) return;
             var wasWaiting = state.Sessions.Any(s => s.Provider == e.Provider && s.SessionId == e.SessionId && s.AgentId == e.AgentId && s.Status == AIStatus.WaitingForApproval);
             if (state.Apply(e))
             {
@@ -101,11 +101,12 @@ public sealed class AiModule : ModuleBase
             }
         };
     }
-    public void Configure(Settings value) { settings = value; if (!value.Codex) state.RemoveProvider("Codex"); if (!value.Claude) state.RemoveProvider("Claude"); Update(); }
+    private bool Enabled(string provider) => provider switch { "Codex" => settings.Codex, "Claude" => settings.Claude, "OpenCode" => settings.OpenCode, _ => false };
+    public void Configure(Settings value) { settings = value; foreach (var provider in new[] { "Codex", "Claude", "OpenCode" }) if (!Enabled(provider)) state.RemoveProvider(provider); Update(); }
     public void TogglePause() { Paused = !Paused; startupRecovery = false; acceptAfter = DateTimeOffset.UtcNow; state.Clear(); Update(); }
     private void Recover(IslandEvent value)
     {
-        if (!startupRecovery || Paused || value.Provider == "Codex" && !settings.Codex || value.Provider == "Claude" && !settings.Claude ||
+        if (!startupRecovery || Paused || !Enabled(value.Provider) ||
             state.Sessions.Any(s => s.Provider == value.Provider && s.SessionId == value.SessionId && s.AgentId == value.AgentId)) return;
         if (state.Apply(value with { Kind = "SessionStart", TurnId = null, ToolId = null, TranscriptPath = null }))
             state.Sessions.First(s => s.Provider == value.Provider && s.SessionId == value.SessionId && s.AgentId == value.AgentId).AwaitingState = true;
@@ -118,17 +119,17 @@ public sealed class AiModule : ModuleBase
         foreach (var session in state.Sessions.Where(s => s.Connection != ConnectionStatus.Offline).ToArray())
         {
             // Also enrich sessions written by older Hooks while their ancestry is available.
-            if (!session.ShellProcessId.HasValue)
+            if (session.Provider != "OpenCode" && !session.ShellProcessId.HasValue)
                 (session.ShellProcessId, session.ShellProcessStartedAt) = ProcessLifetime.FindShell(session.ProcessId, session.ProcessStartedAt);
             var connection = ProcessLifetime.CheckSession(session.ProcessId, session.ProcessStartedAt,
                 session.ShellProcessId, session.ShellProcessStartedAt);
             if (connection == ConnectionStatus.Offline)
-                state.Apply(new IslandEvent(session.Provider, session.SessionId, "SessionEnd", DateTimeOffset.UtcNow));
+                state.Apply(new IslandEvent(session.Provider, session.SessionId, "SessionEnd", DateTimeOffset.UtcNow, AgentId: session.AgentId));
             else session.Connection = connection;
         }
         var now = DateTimeOffset.UtcNow;
         unlinkedCount = processes.Apps.Count(p =>
-            (settings.Codex && p.Name.Equals("codex", StringComparison.OrdinalIgnoreCase) || settings.Claude && p.Name.Equals("claude", StringComparison.OrdinalIgnoreCase)) &&
+            (settings.Codex && p.Name.Equals("codex", StringComparison.OrdinalIgnoreCase) || settings.Claude && p.Name.Equals("claude", StringComparison.OrdinalIgnoreCase) || settings.OpenCode && p.Name.Equals("opencode", StringComparison.OrdinalIgnoreCase)) &&
             !state.Sessions.Any(s => s.ProcessId == p.Id && s.Connection != ConnectionStatus.Offline));
         if (now >= nextCompletionCheck)
         {
@@ -152,7 +153,7 @@ public sealed class AiModule : ModuleBase
             : $"正在监控 {MonitoredCount} 个 Agent · " + (count > 0 ? $"{count} 个处理中" : state.Sessions.Any(s => s.AwaitingState && s.Connection != ConnectionStatus.Offline) ? "等待状态同步" : visible.Length > 0 ? "任务已结束" : "空闲");
         Compact = Summary;
         if (!Paused && NeedsAttention) Summary = $"{state.Sessions.Count(s => s.Status == AIStatus.WaitingForApproval)} 个 Agent 等待你确认";
-        foreach (var provider in new[] { "Codex", "Claude" })
+        foreach (var provider in new[] { "Codex", "Claude", "OpenCode" })
         {
             var sessions = state.Sessions.Where(s => s.Provider == provider && (s.Connection != ConnectionStatus.Offline || visible.Contains(s))).OrderBy(s => s.StartedAt).ToArray();
             var group = Groups.FirstOrDefault(g => g.Name == provider);

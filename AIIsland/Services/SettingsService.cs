@@ -12,12 +12,15 @@ public sealed class Settings
     public int BalanceRefreshSeconds { get; set; } = 60;
     public bool Codex { get; set; } = true;
     public bool Claude { get; set; } = true;
+    public bool OpenCode { get; set; } = true;
     public bool QQMusic { get; set; } = true;
     public bool NetEaseMusic { get; set; } = true;
     public bool Clash { get; set; } = true;
     public bool SystemResources { get; set; } = true;
     public string[] MonitorOrder { get; set; } = MonitorOrderCatalog.DefaultIds;
     public bool Animation { get; set; } = true;
+    // Hide the island off the top edge until the pointer is pushed there or an AI task is active.
+    public bool EdgeTrigger { get; set; } = true;
     public bool EnhancedOutline { get; set; } = true;
     public bool RainbowOutline { get; set; } = true;
     public string OutlinePalette { get; set; } = "Rainbow";

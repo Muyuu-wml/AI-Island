@@ -1,5 +1,5 @@
 param(
-    [ValidateSet('Codex','Claude','Both')][string]$Provider = 'Both',
+    [ValidateSet('Codex','Claude','OpenCode','Both','All')][string]$Provider = 'All',
     [string]$ConfigRoot,
     [switch]$Uninstall
 )
@@ -7,8 +7,41 @@ $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSScriptRoot -Parent
 $bridge = Join-Path $root 'artifacts/hook/AIIsland.Hook.exe'
 if (-not $Uninstall -and -not (Test-Path -LiteralPath $bridge)) { throw 'Run scripts/build.ps1 first.' }
-$providers = if ($Provider -eq 'Both') { @('Codex','Claude') } else { @($Provider) }
+$providers = if ($Provider -eq 'All') { @('Codex','Claude','OpenCode') } elseif ($Provider -eq 'Both') { @('Codex','Claude') } else { @($Provider) }
 foreach ($name in $providers) {
+    if ($name -eq 'OpenCode') {
+        $configHome = if ($ConfigRoot) { Join-Path $ConfigRoot '.config' } elseif ($env:XDG_CONFIG_HOME) { $env:XDG_CONFIG_HOME } else { Join-Path $env:USERPROFILE '.config' }
+        $folder = Join-Path $configHome 'opencode'
+        $plugin = Join-Path $folder 'plugins/ai-island'
+        $files = @('package.json','index.js','monitor.js','bridge.json')
+        if (Test-Path -LiteralPath $plugin) {
+            $manifest = Join-Path $plugin 'package.json'
+            if (-not (Test-Path -LiteralPath $manifest) -or (Get-Content -LiteralPath $manifest -Raw | ConvertFrom-Json).name -ne 'ai-island-opencode') {
+                throw "Not an AI Island plugin directory: $plugin"
+            }
+            # Backups must be outside plugins/, whose immediate directories auto-load.
+            $backup = Join-Path $folder ('ai-island-backups/' + [guid]::NewGuid().ToString('N'))
+            New-Item -ItemType Directory -Path $backup -Force | Out-Null
+            Copy-Item -LiteralPath $plugin -Destination $backup -Recurse
+        }
+        if ($Uninstall) {
+            foreach ($file in $files) {
+                $target = Join-Path $plugin $file
+                if (Test-Path -LiteralPath $target) { Remove-Item -LiteralPath $target }
+            }
+            if ((Test-Path -LiteralPath $plugin) -and -not (Get-ChildItem -LiteralPath $plugin -Force)) { Remove-Item -LiteralPath $plugin }
+        } else {
+            New-Item -ItemType Directory -Path $plugin -Force | Out-Null
+            foreach ($file in @('package.json','monitor.js')) {
+                Copy-Item -LiteralPath (Join-Path $root "integrations/opencode/$file") -Destination (Join-Path $plugin $file) -Force
+            }
+            $json = @{ bridge = [IO.Path]::GetFullPath($bridge) } | ConvertTo-Json
+            [IO.File]::WriteAllText((Join-Path $plugin 'bridge.json'), $json, [Text.UTF8Encoding]::new($false))
+            Copy-Item -LiteralPath (Join-Path $root 'integrations/opencode/index.js') -Destination (Join-Path $plugin 'index.js') -Force
+        }
+        Write-Host "OpenCode V2 plugin updated: $plugin"
+        continue
+    }
     $folder = if ($ConfigRoot) { Join-Path $ConfigRoot ('.' + $name.ToLower()) } elseif ($name -eq 'Codex' -and $env:CODEX_HOME) { $env:CODEX_HOME } elseif ($name -eq 'Claude' -and $env:CLAUDE_CONFIG_DIR) { $env:CLAUDE_CONFIG_DIR } else { Join-Path $env:USERPROFILE ('.' + $name.ToLower()) }
     $path = Join-Path $folder $(if ($name -eq 'Codex') { 'hooks.json' } else { 'settings.json' })
     $config = if (Test-Path -LiteralPath $path) { Get-Content -LiteralPath $path -Raw | ConvertFrom-Json } else { [pscustomobject]@{} }
@@ -53,4 +86,5 @@ foreach ($name in $providers) {
     Move-Item -LiteralPath ($path + '.ai-island.tmp') -Destination $path -Force
     Write-Host "$name hooks updated: $path"
 }
-Write-Host 'Restart all Codex sessions (including app-server) and review/trust the changed hooks in /hooks.'
+if ($providers -contains 'Codex') { Write-Host 'Restart all Codex sessions (including app-server) and review/trust the changed hooks in /hooks.' }
+if ($providers -contains 'OpenCode') { Write-Host 'OpenCode V2 watches global plugins. Submit a new task to verify; if needed, restart the service with: opencode service restart' }

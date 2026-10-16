@@ -12,7 +12,7 @@ public static class SessionRegistry
 {
     public static bool IsAlive(IslandEvent value)
     {
-        if (value.Provider is not ("Codex" or "Claude") || string.IsNullOrWhiteSpace(value.SessionId) ||
+        if (value.Provider is not ("Codex" or "Claude" or "OpenCode") || string.IsNullOrWhiteSpace(value.SessionId) ||
             value.SessionId.Length > 200 || value.AgentId is { Length: > 200 } || !value.ProcessId.HasValue || !value.ProcessStartedAt.HasValue ||
             value.Kind == "SessionEnd" || value.At > DateTimeOffset.UtcNow.AddSeconds(5)) return false;
         return ProcessLifetime.CheckSession(value.ProcessId, value.ProcessStartedAt,
@@ -21,7 +21,7 @@ public static class SessionRegistry
 
     public static void Remember(string directory, IslandEvent value)
     {
-        if (value.Provider is not ("Codex" or "Claude") || string.IsNullOrWhiteSpace(value.SessionId) || value.SessionId.Length > 200 || value.AgentId is { Length: > 200 }) return;
+        if (value.Provider is not ("Codex" or "Claude" or "OpenCode") || string.IsNullOrWhiteSpace(value.SessionId) || value.SessionId.Length > 200 || value.AgentId is { Length: > 200 }) return;
         var key = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value.Provider + ":" + value.SessionId + ":" + value.AgentId)));
         var path = Path.Combine(directory, key + ".json");
         if (value.Kind is "SessionEnd" or "SubagentStop") { if (File.Exists(path)) File.Delete(path); return; }

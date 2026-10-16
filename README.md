@@ -4,20 +4,22 @@
   <img src="logo.png" alt="AI Island Logo" width="240" />
 </p>
 
-Windows 桌面上的灵动岛式状态面板，使用 C#、.NET 8 和 WPF 开发。集中展示 Codex / Claude CLI 会话、系统资源、音乐播放、系统代理和账户余额，支持托盘常驻与开机启动。
+Windows 桌面上的灵动岛式状态面板，使用 C#、.NET 8 和 WPF 开发。集中展示 Codex / Claude Code / OpenCode 会话、系统资源、音乐播放、系统代理和账户余额，支持托盘常驻与开机启动。
 
 ## 功能
 
 | 模块 | 功能 |
 | --- | --- |
-| AI 会话 | 通过 Hook 接收 Codex、Claude 会话事件，展示任务状态、等待确认、完成和失败；支持暂停监控和尝试定位关联终端 |
+| AI 会话 | 通过 Hook / 插件接收 Codex、Claude Code、OpenCode V2 会话事件，展示任务状态、等待确认、完成和失败；支持独立开关、暂停监控和尝试定位关联终端 |
 | 系统资源 | 展示 CPU、内存使用率与磁盘容量 |
 | 音乐 | 接入 QQ 音乐、网易云音乐的 Windows 媒体会话，展示曲目、封面和进度，支持播放 / 暂停、上一首、下一首 |
 | 系统代理 | 读取 Clash Verge Rev 配置，展示并切换 Windows 系统代理；检测到代理冲突或代理守卫时限制操作 |
 | 账户余额 | 查询 `xc.lifesecretary.com` 账户余额，支持手动和定时刷新 |
-| 外观与交互 | 拖动定位、顶部对齐、模块开关与排序、动画、彩虹 / 单色灯条及静态 / 跑马灯 / 呼吸效果 |
+| 外观与交互 | 边缘触发隐藏（默认：平时藏到屏幕顶部外，把鼠标推到顶部边缘滑出，移开自动收回；有任务进行或等待确认时常驻）、拖动定位、顶部对齐、模块开关与排序、动画、彩虹 / 单色灯条及静态 / 跑马灯 / 呼吸效果 |
 
 AI 模块固定在上方，其他模块可在设置中调整顺序。任务结束 / 失败通知与等待确认通知可分别开关。
+
+边缘触发可在设置「通用设置」中关闭：关闭后恢复为顶部常驻。开启时，鼠标推到屏幕顶部、且在面板水平范围内（左右各留约 30px 余量）即可滑出；托盘或右键菜单的「Show Island」会临时钉住面板，点击面板以外的区域后随鼠标离开收回。
 
 ## 环境
 
@@ -63,11 +65,13 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/package.ps1
 先执行构建，确保 `artifacts/hook/AIIsland.Hook.exe` 存在，然后安装：
 
 ```powershell
-# 同时接入 Codex 和 Claude
+# 同时接入 Codex、Claude Code 和 OpenCode V2
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/Install-Hooks.ps1
 
-# 只接入一种 CLI，Provider 可选 Codex、Claude、Both
+# 只接入一种 CLI，Provider 可选 Codex、Claude、OpenCode、All
+# Both 保留为仅 Codex + Claude 的兼容选项；默认 All
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/Install-Hooks.ps1 -Provider Codex
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/Install-Hooks.ps1 -Provider OpenCode
 
 # 移除本项目安装的 Hook
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/Install-Hooks.ps1 -Uninstall
@@ -79,10 +83,27 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/Install-Hooks.ps1 -U
 | --- | --- |
 | Codex | `%USERPROFILE%/.codex/hooks.json`；设置了 `CODEX_HOME` 时使用该目录 |
 | Claude | `%USERPROFILE%/.claude/settings.json`；设置了 `CLAUDE_CONFIG_DIR` 时使用该目录 |
+| OpenCode V2 | `%USERPROFILE%/.config/opencode/plugins/ai-island/`；设置了 `XDG_CONFIG_HOME` 时使用其下的 `opencode/plugins/ai-island/` |
 
-也可传入 `-ConfigRoot <目录>`，脚本会使用该目录下的 `.codex` 和 `.claude` 子目录。
+也可传入 `-ConfigRoot <目录>`，脚本会使用该目录下的 `.codex`、`.claude` 和 `.config/opencode` 子目录。
 
 安装后重启 CLI 会话；若 Codex 提示审核 Hook，按其 `/hooks` 界面提示操作。接入需要 CLI 版本支持脚本注册的 Hook 事件。安装脚本写入桥接程序的绝对路径，因此移动项目后需要重新安装 Hook，并保留 `artifacts/hook/` 中的完整运行文件。
+
+### OpenCode V2
+
+接入面向 OpenCode V2 的服务端插件 API（按 2.0.26 事件协议实现）。插件自动发现，无需修改 `opencode.json(c)`，也无需额外安装 npm 依赖。更新或卸载前，已有插件备份到 OpenCode 配置目录下的 `ai-island-backups/`。
+
+- 安装后在设置中启用 **OpenCode**，提交新任务，在「监控接入状态」查看事件是否到达。全局插件通常自动加载；未加载时，在方便结束当前工作的时机执行 `opencode service restart`。
+- 监控执行开始、思考、并行工具执行、权限等待、完成、失败、中断和会话删除；子会话按独立 session ID 展示。任务失败后的 idle 事件不会误报完成。
+- 在线状态关联 **OpenCode 后台服务进程**。关闭一个终端不会将仍由服务托管的会话标为离线；删除会话、卸载插件或服务退出后离线。重启 AI Island 可恢复已记录的在线会话，任务状态等待新事件同步。
+- 服务可供多个界面使用，因此面板不会尝试将服务进程定位成某个终端标签页；请在 OpenCode 中选择对应会话。
+- 插件仅转发本地状态元数据，不保存提示词、回答、工具参数、结果或错误正文。
+
+仅移除 OpenCode 接入：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/Install-Hooks.ps1 -Provider OpenCode -Uninstall
+```
 
 ## 配置与数据
 
@@ -111,6 +132,8 @@ AIIsland/                 WPF 主程序
   Services/               设置、事件读取、系统接口等服务
   UI/                     面板、设置窗口与控件
 AIIsland.Hook/            CLI 事件桥接程序
+integrations/opencode/   OpenCode V2 服务端插件与事件适配
+tests/                   状态机、事件适配与接入回归检查
 scripts/
   build.ps1               构建并发布主程序与 Hook
   package.ps1             打包 Windows x64 自包含主程序
@@ -129,3 +152,16 @@ logo.png                  项目标识
 - **代理开关不可用**：检查 Clash Verge Rev 是否运行、配置能否读取，以及是否存在代理守卫、PAC 或其他代理冲突。
 - **无法直接跳转到终端标签页**：程序只在能够可靠关联时激活终端窗口；多标签页仍需手动选择，无法定位时会显示提示。
 - **打包提示程序正在运行**：先从托盘退出 AI Island，再重新执行打包脚本。
+
+## 回归检查
+
+需要 Node.js（支持 `node --test`）和 .NET 8 SDK：
+
+```powershell
+node --test tests/opencode.test.mjs
+.\.dotnet\dotnet.exe run --project tests/AIIsland.Tests/AIIsland.Tests.csproj -c Release
+# 先运行 build.ps1，供安装测试定位桥接程序；仅操作 artifacts 下的临时配置
+powershell -NoProfile -ExecutionPolicy Bypass -File tests/install-opencode.ps1
+```
+
+未使用项目内 SDK 时，将第二条命令中的 `.\.dotnet\dotnet.exe` 替换为 `dotnet`。

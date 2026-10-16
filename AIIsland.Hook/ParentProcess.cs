@@ -3,6 +3,11 @@ using System.Runtime.InteropServices;
 
 internal static class ParentProcess
 {
+    public static (int? Id, DateTimeOffset? Started) Read(int id)
+    {
+        try { using var process = Process.GetProcessById(id); return process.HasExited ? (null, null) : (id, new DateTimeOffset(process.StartTime.ToUniversalTime())); }
+        catch { return (null, null); }
+    }
     [StructLayout(LayoutKind.Sequential)]
     private struct BasicInfo { public IntPtr Reserved1, Peb, Reserved2, Reserved3, ProcessId, ParentId; }
     [DllImport("ntdll.dll")] private static extern int NtQueryInformationProcess(IntPtr handle, int kind, ref BasicInfo info, int size, out int returned);

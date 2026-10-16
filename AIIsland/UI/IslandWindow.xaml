@@ -127,9 +127,17 @@
    </ContentControl>
   </DataTemplate>
  </Window.Resources>
- <Border x:Name="Capsule" Margin="10" CornerRadius="24" Background="#F018191E" BorderBrush="#FF34363F" BorderThickness="1">
+ <Border x:Name="Capsule" Margin="10" CornerRadius="24" BorderBrush="#FF34363F" BorderThickness="1">
+  <Border.Background>
+   <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+    <GradientStop Color="#E22A2E37" Offset="0"/>
+    <GradientStop Color="#E215171C" Offset="1"/>
+   </LinearGradientBrush>
+  </Border.Background>
   <Border.Effect><DropShadowEffect BlurRadius="14" ShadowDepth="3" Opacity="0.35"/></Border.Effect>
-  <StackPanel x:Name="RootPanel">
+  <Grid>
+   <Border x:Name="FrostOverlay" CornerRadius="23" IsHitTestVisible="False"/>
+   <StackPanel x:Name="RootPanel">
    <Border x:Name="Header" Padding="18,12" Background="Transparent" Cursor="Hand" MouseLeftButtonDown="BeginPointer" MouseMove="MovePointer" MouseLeftButtonUp="EndPointer" LostMouseCapture="CancelPointer">
     <StackPanel>
      <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="28"/><ColumnDefinition/><ColumnDefinition Width="28"/></Grid.ColumnDefinitions>
@@ -171,6 +179,7 @@
     </StackPanel>
     </StackPanel>
    </ScrollViewer>
-  </StackPanel>
+   </StackPanel>
+  </Grid>
  </Border>
 </Window>

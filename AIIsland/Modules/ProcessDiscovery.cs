@@ -15,7 +15,7 @@ public sealed class ProcessDiscovery
 {
     public Task<ProcessSnapshot> ReadAsync(CancellationToken token) => Task.Run(() => {
         var result = new List<AppProcess>();
-        foreach (var name in new[] { "codex", "claude", "QQMusic", "cloudmusic", "clash-verge", "verge-mihomo" })
+        foreach (var name in new[] { "codex", "claude", "opencode", "QQMusic", "cloudmusic", "clash-verge", "verge-mihomo" })
         {
             token.ThrowIfCancellationRequested();
             foreach (var process in Process.GetProcessesByName(name))

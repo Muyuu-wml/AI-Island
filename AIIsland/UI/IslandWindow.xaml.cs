@@ -25,6 +25,8 @@ public partial class IslandWindow : Window
     private SettingsWindow? settingsWindow;
     private bool pointerDown, dragging, layoutQueued, closing;
     private bool drawerRequested, enterPending, aiWasExpanded;
+    private bool shown, pinned, visibilityQueued;
+    private DispatcherTimer? slideTimer;
     private int transitionVersion;
     private readonly TranslateTransform drawerOffset = new();
     private MouseHook? mouseHook;
@@ -39,6 +41,8 @@ public partial class IslandWindow : Window
         settings = SettingsService.Load();
         RenderOptions.ProcessRenderMode = RenderMode.SoftwareOnly;
         InitializeComponent();
+        Opacity = 0;
+        FrostOverlay.Background = IslandAppearance.FrostNoise();
         ToolPanel.RenderTransform = drawerOffset;
         var contentClip = new RectangleGeometry { RadiusX = 23, RadiusY = 23 };
         RootPanel.Clip = contentClip;
@@ -60,14 +64,14 @@ public partial class IslandWindow : Window
             _ => Forms.ToolTipIcon.Info
         });
         var menu = new Forms.ContextMenuStrip();
-        menu.Items.Add("Show Island", null, (_, _) => Dispatcher.Invoke(Show));
+        menu.Items.Add("Show Island", null, (_, _) => Dispatcher.Invoke(RevealFromTray));
         menu.Items.Add("Settings", null, (_, _) => Dispatcher.Invoke(OpenSettings));
         menu.Items.Add("暂停 / 恢复 AI 监控", null, (_, _) => Dispatcher.Invoke(TogglePause));
         menu.Items.Add(new Forms.ToolStripSeparator());
         menu.Items.Add("Exit", null, (_, _) => ExitFromTray());
-        tray.ContextMenuStrip = menu; tray.DoubleClick += (_, _) => Dispatcher.Invoke(Show);
+        tray.ContextMenuStrip = menu; tray.DoubleClick += (_, _) => Dispatcher.Invoke(RevealFromTray);
         var context = new ContextMenu();
-        AddMenu(context, "Show Island", Show); AddMenu(context, "Settings", OpenSettings);
+        AddMenu(context, "Show Island", RevealFromTray); AddMenu(context, "Settings", OpenSettings);
         AddMenu(context, "暂停 / 恢复 AI 监控", TogglePause); AddMenu(context, "Exit", () => Application.Current.Shutdown());
         AddMenu(context, "顶部居中", () => { settings.Position = "Center"; SettingsService.SavePosition(settings); Position(); ScheduleLayout(); });
         Capsule.ContextMenu = context;
@@ -82,7 +86,7 @@ public partial class IslandWindow : Window
             mouseHook = ObserveMouse;
             mouseHookHandle = SetWindowsHookEx(14, mouseHook, GetModuleHandle(null), 0);
         };
-        Loaded += async (_, _) => { Position(); ScheduleLayout(); await ViewModel.StartAsync(); };
+        Loaded += async (_, _) => { SyncVisibility(false); Position(); Opacity = 1; ScheduleLayout(); await ViewModel.StartAsync(); };
         AddHandler(Expander.ExpandedEvent, new RoutedEventHandler((_, _) => ScheduleLayout()));
         AddHandler(Expander.CollapsedEvent, new RoutedEventHandler((_, _) => ScheduleLayout()));
         SizeChanged += (_, _) => Position();
@@ -97,14 +101,24 @@ public partial class IslandWindow : Window
     }
     private IntPtr ObserveMouse(int code, IntPtr message, IntPtr data)
     {
-        if (code >= 0 && message.ToInt64() == 0x201 && drawerRequested && !pointerDown && !closing && Capsule.ContextMenu?.IsOpen != true)
+        if (code >= 0 && !closing)
         {
-            var point = Marshal.PtrToStructure<NativePoint>(data);
-            var hit = WindowFromPoint(point);
-            if (GetAncestor(hit, 2) != new WindowInteropHelper(this).Handle)
+            var kind = message.ToInt64();
+            if (kind == 0x200 && settings.EdgeTrigger && !pointerDown && !dragging)
+                ObserveEdgeMove(Marshal.PtrToStructure<NativePoint>(data));
+            else if (kind == 0x201)
             {
-                var version = transitionVersion;
-                Dispatcher.BeginInvoke(new Action(() => { if (!closing && drawerRequested && version == transitionVersion) ToggleDrawer(); }));
+                var point = Marshal.PtrToStructure<NativePoint>(data);
+                if (pinned && !OverIsland(point)) { pinned = false; QueueVisibility(settings.Animation); }
+                if (drawerRequested && !pointerDown && Capsule.ContextMenu?.IsOpen != true)
+                {
+                    var hit = WindowFromPoint(point);
+                    if (GetAncestor(hit, 2) != new WindowInteropHelper(this).Handle)
+                    {
+                        var version = transitionVersion;
+                        Dispatcher.BeginInvoke(new Action(() => { if (!closing && drawerRequested && version == transitionVersion) ToggleDrawer(); }));
+                    }
+                }
             }
         }
         return CallNextHookEx(mouseHookHandle, code, message, data);
@@ -122,7 +136,7 @@ public partial class IslandWindow : Window
                 drawerOffset.BeginAnimation(TranslateTransform.YProperty, null); drawerOffset.Y = 0;
                 BeginAnimation(WidthProperty, null); BeginAnimation(HeightProperty, null);
             }
-            ViewModel.Configure(value); UpdateAppearance(); ScheduleLayout();
+            ViewModel.Configure(value); UpdateAppearance(); SyncVisibility(false); ScheduleLayout();
         });
         settingsWindow.Closed += (_, _) => settingsWindow = null; settingsWindow.Show();
     }
@@ -183,9 +197,9 @@ public partial class IslandWindow : Window
                 if (aiWasExpanded && settings.Animation) AiCard.BeginAnimation(OpacityProperty, DrawerTransition(0, 1, 240, 60));
             }
             const double width = 420d;
-            var area = Forms.Screen.FromHandle(new WindowInteropHelper(this).Handle).WorkingArea;
-            var scale = VisualTreeHelper.GetDpi(this).DpiScaleY;
             var anchor = Anchor();
+            var area = Forms.Screen.FromPoint(new System.Drawing.Point(anchor.X, anchor.Y)).WorkingArea;
+            var scale = VisualTreeHelper.GetDpi(this).DpiScaleY;
             var availableHeight = Math.Max(66, (area.Bottom - anchor.Y) / scale);
             var frameWidth = Capsule.Margin.Left + Capsule.Margin.Right + Capsule.BorderThickness.Left + Capsule.BorderThickness.Right;
             var frameHeight = Capsule.Margin.Top + Capsule.Margin.Bottom + Capsule.BorderThickness.Top + Capsule.BorderThickness.Bottom;
@@ -197,7 +211,8 @@ public partial class IslandWindow : Window
             ToolPanel.Measure(new Size(width - frameWidth - 20, double.PositiveInfinity));
             var bodyHeight = (ViewModel.AiExpanded ? AiCard.DesiredSize.Height : 0) + (drawerRequested ? ToolPanel.DesiredSize.Height : 0);
             var height = Math.Max(66, Header.DesiredSize.Height + frameHeight + (bodyHeight > 0 ? Math.Min(bodyHeight, DrawerScroll.MaxHeight) + 8 : 0));
-            Animate(HeightProperty, Math.Min(height, availableHeight)); Position();
+            Animate(HeightProperty, Math.Min(height, availableHeight));
+            SyncVisibility(settings.Animation); Position();
             if (enterPending && drawerRequested)
             {
                 enterPending = false;
@@ -260,10 +275,105 @@ public partial class IslandWindow : Window
     }
     private void Position()
     {
-        if (pointerDown || new WindowInteropHelper(this).Handle == IntPtr.Zero) return;
+        if (pointerDown || slideTimer is { IsEnabled: true }) return;
+        var handle = new WindowInteropHelper(this).Handle;
+        if (handle == IntPtr.Zero) return;
         var anchor = Anchor(); var area = Forms.Screen.FromPoint(new System.Drawing.Point(anchor.X, anchor.Y)).WorkingArea;
-        var y = anchor.Y;
-        MoveWithin(area, anchor.X, y);
+        if (shown) MoveWithin(area, anchor.X, anchor.Y);
+        else PlaceOffscreen(handle, area, anchor.X);
+    }
+    private void PlaceOffscreen(IntPtr handle, System.Drawing.Rectangle area, int x)
+    {
+        if (!GetWindowRect(handle, out var rect)) return;
+        var width = rect.Right - rect.Left;
+        x = Math.Clamp(x, area.Left, Math.Max(area.Left, area.Right - width));
+        var y = area.Top - (rect.Bottom - rect.Top) - 2;
+        SetWindowPos(handle, IntPtr.Zero, x, y, 0, 0, 0x0015);
+    }
+    private bool ActivityVisible => !closing && (ViewModel.Ai.ActiveCount > 0 || ViewModel.Ai.NeedsAttention);
+    private void RevealFromTray() { pinned = true; SyncVisibility(settings.Animation); }
+    private void QueueVisibility(bool animate)
+    {
+        if (visibilityQueued) return;
+        visibilityQueued = true;
+        Dispatcher.BeginInvoke(new Action(() => { visibilityQueued = false; if (!closing) SyncVisibility(animate); }));
+    }
+    private void SyncVisibility(bool animate)
+    {
+        if (closing || pointerDown || dragging || new WindowInteropHelper(this).Handle == IntPtr.Zero) return;
+        var want = !settings.EdgeTrigger || pinned || ActivityVisible || PointerOverIsland() || InRevealZone();
+        if (want == shown) return;
+        shown = want;
+        if (!want && drawerRequested) { transitionVersion++; drawerRequested = false; enterPending = false; ViewModel.DrawerOpen = false; }
+        var anchor = Anchor();
+        var area = Forms.Screen.FromPoint(new System.Drawing.Point(anchor.X, anchor.Y)).WorkingArea;
+        var target = shown ? anchor.Y : area.Top - CurrentHeight() - 2;
+        AnimateTopTo(target, animate);
+    }
+    private int CurrentHeight()
+    {
+        if (GetWindowRect(new WindowInteropHelper(this).Handle, out var rect)) return rect.Bottom - rect.Top;
+        return (int)(ActualHeight * VisualTreeHelper.GetDpi(this).DpiScaleY);
+    }
+    private void AnimateTopTo(int targetY, bool animate)
+    {
+        var handle = new WindowInteropHelper(this).Handle;
+        if (handle == IntPtr.Zero || !GetWindowRect(handle, out var rect)) return;
+        var anchor = Anchor();
+        var area = Forms.Screen.FromPoint(new System.Drawing.Point(anchor.X, anchor.Y)).WorkingArea;
+        var x = Math.Clamp(anchor.X, area.Left, Math.Max(area.Left, area.Right - (rect.Right - rect.Left)));
+        var from = rect.Top;
+        if (slideTimer is { IsEnabled: true }) slideTimer.Stop();
+        slideTimer = null;
+        if (!animate || Math.Abs(from - targetY) < 1) { SetWindowPos(handle, IntPtr.Zero, x, targetY, 0, 0, 0x0015); return; }
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+        var timer = new DispatcherTimer(DispatcherPriority.Render) { Interval = TimeSpan.FromMilliseconds(12) };
+        timer.Tick += (_, _) =>
+        {
+            var t = Math.Min(1, clock.Elapsed.TotalMilliseconds / 190);
+            var y = (int)Math.Round(from + (targetY - from) * (1 - Math.Pow(1 - t, 3)));
+            SetWindowPos(handle, IntPtr.Zero, x, y, 0, 0, 0x0015);
+            if (t >= 1) { timer.Stop(); slideTimer = null; }
+        };
+        slideTimer = timer; timer.Start();
+    }
+    private void ObserveEdgeMove(NativePoint pt)
+    {
+        var handle = new WindowInteropHelper(this).Handle;
+        if (handle == IntPtr.Zero || !GetWindowRect(handle, out var rect)) return;
+        var over = pt.X >= rect.Left && pt.X < rect.Right && pt.Y >= rect.Top && pt.Y < rect.Bottom;
+        var want = !settings.EdgeTrigger || pinned || ActivityVisible || over || InRevealZone(pt, rect);
+        if (want != shown) QueueVisibility(settings.Animation);
+    }
+    private bool OverIsland(NativePoint pt)
+    {
+        var handle = new WindowInteropHelper(this).Handle;
+        if (handle == IntPtr.Zero || !GetWindowRect(handle, out var rect)) return false;
+        return OverIsland(pt, rect);
+    }
+    private static bool OverIsland(NativePoint pt, NativeRect rect) =>
+        pt.X >= rect.Left && pt.X < rect.Right && pt.Y >= rect.Top && pt.Y < rect.Bottom;
+    private bool PointerOverIsland() => GetCursorPos(out var pt) && OverIsland(pt);
+    private bool InRevealZone() => GetCursorPos(out var pt) && InRevealZone(pt);
+    private bool InRevealZone(NativePoint pt)
+    {
+        var handle = new WindowInteropHelper(this).Handle;
+        if (handle == IntPtr.Zero || !GetWindowRect(handle, out var rect)) return false;
+        return InRevealZone(pt, rect);
+    }
+    // The top strip in front of the island reveals it. When it is already out, the strip
+    // stretches down to the island's top edge so travelling from the screen top onto the
+    // panel never crosses a gap that would hide it again.
+    private bool InRevealZone(NativePoint pt, NativeRect rect)
+    {
+        if (!settings.EdgeTrigger) return false;
+        var anchor = Anchor();
+        var area = Forms.Screen.FromPoint(new System.Drawing.Point(anchor.X, anchor.Y)).WorkingArea;
+        var dpi = VisualTreeHelper.GetDpi(this);
+        var gap = Math.Max(0, rect.Top - area.Top);
+        if (pt.Y > area.Top + gap + Math.Max(2, (int)(4 * dpi.DpiScaleY))) return false;
+        var pad = (int)(30 * dpi.DpiScaleX);
+        return pt.X >= rect.Left - pad && pt.X <= rect.Right + pad;
     }
     private void MoveWithin(System.Drawing.Rectangle area, int x, int y)
     {
