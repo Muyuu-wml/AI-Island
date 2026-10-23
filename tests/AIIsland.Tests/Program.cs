@@ -40,6 +40,8 @@ foreach (var provider in new[] { "Codex", "Claude" })
 Check(!state.Apply(Event("UserPromptSubmit", "Unknown")), "Unknown provider rejected");
 Check(JsonSerializer.Deserialize<Settings>("{\"Codex\":false}")!.OpenCode, "Old settings enable OpenCode by default");
 Check(!JsonSerializer.Deserialize<Settings>(JsonSerializer.Serialize(new Settings { OpenCode = false }))!.OpenCode, "Disabled setting round-trips");
+var ownDirectory = ProcessLifetime.Directory(Environment.ProcessId);
+Check(ownDirectory != null && Path.TrimEndingDirectorySeparator(Path.GetFullPath(ownDirectory)) == Path.TrimEndingDirectorySeparator(Environment.CurrentDirectory), "OpenCode client directory is readable");
 
 var directory = Path.Combine(Path.GetTempPath(), "ai-island-tests-" + Guid.NewGuid().ToString("N"));
 Directory.CreateDirectory(directory);
@@ -60,11 +62,11 @@ try
     var approvals = 0; var completions = 0;
     module.ApprovalRequested += _ => approvals++;
     module.Completed += _ => completions++;
-    async Task Deliver(string kind)
+    async Task Deliver(string kind, params AppProcess[] apps)
     {
         var value = Event(kind) with { ProcessId = live.ProcessId, ProcessStartedAt = live.ProcessStartedAt, WorkingDirectory = directory };
         File.WriteAllText(Path.Combine(inboxPath, Guid.NewGuid() + ".json"), JsonSerializer.Serialize(value));
-        await module.RefreshAsync(new ProcessSnapshot(Array.Empty<AppProcess>()), CancellationToken.None);
+        await module.RefreshAsync(new ProcessSnapshot(apps), CancellationToken.None);
     }
     at = DateTimeOffset.UtcNow.AddMilliseconds(50);
     await Deliver("UserPromptSubmit");
@@ -80,6 +82,19 @@ try
     module.Configure(new Settings());
     await Deliver("Thinking");
     Check(module.ActiveCount == 1, "Re-enabled OpenCode resumes on a phase event");
+    // The plugin reports the shared background service PID; only a CLI started in the session's
+    // own directory keeps that session monitored.
+    var service = new AppProcess(live.ProcessId!.Value, "opencode", null, @"C:\Users\service");
+    var client = new AppProcess(live.ProcessId!.Value + 100000, "opencode", null, directory);
+    var elsewhere = new AppProcess(live.ProcessId!.Value + 200000, "opencode", null, directory + "-other");
+    await Deliver("UserPromptSubmit", service, client);
+    await Deliver("Stop", service, client);
+    Check(module.ActiveCount == 0 && module.MonitoredCount == 1, "An attached client keeps an idle session");
+    await module.RefreshAsync(new ProcessSnapshot(new[] { service, elsewhere }), CancellationToken.None);
+    Check(module.MonitoredCount == 0 && module.Groups.SelectMany(g => g.Rows).All(r => r.Status != "等待输入"), "Closing the CLI ends the idle OpenCode session");
+    at = DateTimeOffset.UtcNow.AddSeconds(1); // A new prompt arrives after the synthetic session end.
+    await Deliver("UserPromptSubmit", service, elsewhere);
+    Check(module.ActiveCount == 1, "A running task stays tracked without a client");
     module.TogglePause();
     await Deliver("PermissionRequest");
     Check(module.ActiveCount == 0, "Paused monitoring ignores events");

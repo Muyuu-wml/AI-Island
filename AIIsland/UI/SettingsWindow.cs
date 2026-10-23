@@ -7,7 +7,7 @@ public sealed class SettingsWindow : Window
 {
     public SettingsWindow(Settings current, Action<Settings> saved)
     {
-        Title = "AI Island · Settings"; Width = 360; Height = 565; ResizeMode = ResizeMode.NoResize; WindowStartupLocation = WindowStartupLocation.CenterScreen;
+        Title = "AI Island · Settings"; Width = 360; Height = 655; ResizeMode = ResizeMode.NoResize; WindowStartupLocation = WindowStartupLocation.CenterScreen;
         var panel = new StackPanel { Margin = new Thickness(26) }; Content = new ScrollViewer { Content = panel, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
         panel.Children.Add(new TextBlock { Text = "AI Island", FontSize = 24, Margin = new Thickness(0, 0, 0, 18) });
         CheckBox Check(string text, bool value) { var c = new CheckBox { Content = text, IsChecked = value, Margin = new Thickness(0, 6, 0, 6) }; panel.Children.Add(c); return c; }
@@ -18,23 +18,33 @@ public sealed class SettingsWindow : Window
         panel.Children.Add(new TextBlock { Text = "勾选显示，用右侧箭头调整页面顺序。", FontSize = 11, Margin = new Thickness(0, 0, 0, 6) });
         var monitors = new MonitorOrderEditor(current);
         panel.Children.Add(monitors);
-        panel.Children.Add(new TextBlock { Text = "账户余额 · xc.lifesecretary.com", FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, 18, 0, 6) });
+        panel.Children.Add(new TextBlock { Text = "账户余额 · xc.lifesecretary.com（国际）", FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, 18, 0, 6) });
         panel.Children.Add(new TextBlock { Text = "登录邮箱" });
         var balanceEmail = new TextBox { Text = current.BalanceEmail, Margin = new Thickness(0, 4, 0, 8) }; panel.Children.Add(balanceEmail);
         panel.Children.Add(new TextBlock { Text = "登录密码" });
-        var hasSavedPassword = !string.IsNullOrEmpty(current.BalancePassword);
-        var passwordField = new Grid { Margin = new Thickness(0, 4, 0, 8) }; panel.Children.Add(passwordField);
-        var balancePassword = new PasswordBox { PasswordChar = '●' }; passwordField.Children.Add(balancePassword);
-        var savedPasswordHint = new TextBlock { Text = "●●●●", Margin = new Thickness(5, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center, IsHitTestVisible = false };
-        passwordField.Children.Add(savedPasswordHint);
-        void UpdatePasswordHint() => savedPasswordHint.Visibility = hasSavedPassword && balancePassword.Password.Length == 0 && !balancePassword.IsKeyboardFocusWithin ? Visibility.Visible : Visibility.Collapsed;
-        UpdatePasswordHint();
-        balancePassword.PasswordChanged += (_, _) => UpdatePasswordHint();
-        balancePassword.GotKeyboardFocus += (_, _) => UpdatePasswordHint();
-        balancePassword.LostKeyboardFocus += (_, _) => UpdatePasswordHint();
+        PasswordBox PasswordField(string saved)
+        {
+            var hasSaved = !string.IsNullOrEmpty(saved);
+            var field = new Grid { Margin = new Thickness(0, 4, 0, 8) }; panel.Children.Add(field);
+            var box = new PasswordBox { PasswordChar = '●' }; field.Children.Add(box);
+            var hint = new TextBlock { Text = "●●●●", Margin = new Thickness(5, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center, IsHitTestVisible = false };
+            field.Children.Add(hint);
+            void Update() => hint.Visibility = hasSaved && box.Password.Length == 0 && !box.IsKeyboardFocusWithin ? Visibility.Visible : Visibility.Collapsed;
+            Update();
+            box.PasswordChanged += (_, _) => Update();
+            box.GotKeyboardFocus += (_, _) => Update();
+            box.LostKeyboardFocus += (_, _) => Update();
+            return box;
+        }
+        var balancePassword = PasswordField(current.BalancePassword);
+        panel.Children.Add(new TextBlock { Text = "账户余额 · pucn.lifesecretary.com（国内）", FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, 12, 0, 6) });
+        panel.Children.Add(new TextBlock { Text = "登录用户名" });
+        var pucnUsername = new TextBox { Text = current.PucnUsername, Margin = new Thickness(0, 4, 0, 8) }; panel.Children.Add(pucnUsername);
+        panel.Children.Add(new TextBlock { Text = "登录密码" });
+        var pucnPassword = PasswordField(current.PucnPassword);
         panel.Children.Add(new TextBlock { Text = "刷新间隔（秒）：10–86400，0 为仅手动" });
         var balanceInterval = new TextBox { Text = current.BalanceRefreshSeconds.ToString(), Margin = new Thickness(0, 4, 0, 8) }; panel.Children.Add(balanceInterval);
-        panel.Children.Add(new TextBlock { Text = "启用上方“账户余额”后生效。密码和 token 在本机加密保存；token 过期自动重新登录。", TextWrapping = TextWrapping.Wrap, FontSize = 11 });
+        panel.Children.Add(new TextBlock { Text = "两个站点可只填一个；留空的不会请求。启用上方“账户余额”后生效。密码在本机加密保存，国内站点 cookie 过期会自动重新登录。", TextWrapping = TextWrapping.Wrap, FontSize = 11 });
         panel.Children.Add(new TextBlock { Text = "通用设置", FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, 18, 0, 4) });
         var animation = Check("启用动画", current.Animation);
         var edgeTrigger = Check("边缘触发（平时隐藏，推到屏幕顶部显示）", current.EdgeTrigger);
@@ -75,6 +85,7 @@ public sealed class SettingsWindow : Window
             value.OpenCode = openCode.IsChecked == true;
             value.BalanceEnabled = monitors.IsMonitorEnabled("balance");
             value.BalanceEmail = balanceEmail.Text.Trim();
+            value.PucnUsername = pucnUsername.Text.Trim();
             value.BalanceRefreshSeconds = refreshSeconds;
             value.CustomLeft = current.CustomLeft; value.CustomTop = current.CustomTop;
             value.QQMusic = monitors.IsMonitorEnabled("qqmusic"); value.Clash = monitors.IsMonitorEnabled("clash");
@@ -89,6 +100,7 @@ public sealed class SettingsWindow : Window
             value.OutlineMode = mode.SelectedIndex == 1 ? "Marquee" : mode.SelectedIndex == 2 ? "Breathing" : "Static";
             try {
                 value.BalancePassword = balancePassword.Password.Length > 0 ? LocalSecret.Protect(balancePassword.Password) : current.BalancePassword;
+                value.PucnPassword = pucnPassword.Password.Length > 0 ? LocalSecret.Protect(pucnPassword.Password) : current.PucnPassword;
                 SettingsService.Save(value); saved(value); Close();
             }
             catch (Exception e) { MessageBox.Show(this, "设置保存失败：" + e.Message, "AI Island"); }

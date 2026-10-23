@@ -9,6 +9,9 @@ public sealed class Settings
     public bool BalanceEnabled { get; set; }
     public string BalanceEmail { get; set; } = "";
     public string BalancePassword { get; set; } = "";
+    // Domestic site (pucn, new-api) uses username login instead of email.
+    public string PucnUsername { get; set; } = "";
+    public string PucnPassword { get; set; } = "";
     public int BalanceRefreshSeconds { get; set; } = 60;
     public bool Codex { get; set; } = true;
     public bool Claude { get; set; } = true;

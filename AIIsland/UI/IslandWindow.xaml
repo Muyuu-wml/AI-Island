@@ -99,13 +99,31 @@
        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="25"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
        <StackPanel>
         <TextBlock Text="可用余额" FontSize="11" Foreground="#9CA8BA"/>
-        <TextBlock Text="{Binding Balance}" FontSize="24" Foreground="#81E4BA" Margin="0,4,0,0"/>
+        <Grid Margin="0,5,0,0">
+         <Grid.ColumnDefinitions><ColumnDefinition Width="34"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+         <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+         <TextBlock Text="国内" FontSize="10" Foreground="#9CA8BA" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,6,0"/>
+         <TextBlock Grid.Row="1" Text="国际" FontSize="10" Foreground="#9CA8BA" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,6,0"/>
+         <TextBlock Grid.Column="1" Text="{Binding DomesticBalance, Mode=OneWay}" FontSize="19" Foreground="#81E4BA"
+                    Typography.NumeralAlignment="Tabular" TextTrimming="CharacterEllipsis"/>
+         <TextBlock Grid.Column="1" Grid.Row="1" Text="{Binding Balance, Mode=OneWay}" FontSize="19" Foreground="#81E4BA"
+                    Typography.NumeralAlignment="Tabular" TextTrimming="CharacterEllipsis" Margin="0,2,0,0"/>
+        </Grid>
         <TextBlock Text="{Binding Status}" FontSize="10" Foreground="#B6C6DE" TextWrapping="Wrap" Margin="0,5,0,0"/>
        </StackPanel>
        <Border Grid.Column="1" Width="1" Background="#394252" Margin="0,3"/>
        <StackPanel Grid.Column="2">
         <TextBlock Text="今日消耗" FontSize="11" Foreground="#9CA8BA"/>
-        <TextBlock Text="{Binding TodayCost}" FontSize="24" Foreground="#E8BD78" Margin="0,4,0,0"/>
+        <Grid Margin="0,5,0,0">
+         <Grid.ColumnDefinitions><ColumnDefinition Width="34"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+         <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+         <TextBlock Text="国内" FontSize="10" Foreground="#9CA8BA" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,6,0"/>
+         <TextBlock Grid.Row="1" Text="国际" FontSize="10" Foreground="#9CA8BA" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,6,0"/>
+         <TextBlock Grid.Column="1" Text="{Binding DomesticTodayCost, Mode=OneWay}" FontSize="19" Foreground="#E8BD78"
+                    Typography.NumeralAlignment="Tabular" TextTrimming="CharacterEllipsis"/>
+         <TextBlock Grid.Column="1" Grid.Row="1" Text="{Binding TodayCost, Mode=OneWay}" FontSize="19" Foreground="#E8BD78"
+                    Typography.NumeralAlignment="Tabular" TextTrimming="CharacterEllipsis" Margin="0,2,0,0"/>
+        </Grid>
         <TextBlock Text="{Binding UsageStatus}" FontSize="10" Foreground="#B6C6DE" TextWrapping="Wrap" Margin="0,5,0,0"/>
        </StackPanel>
       </Grid>

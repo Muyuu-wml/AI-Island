@@ -24,15 +24,27 @@ public static class LocalSecret
 
 public sealed record DailyUsage(decimal TodayCost);
 
+public sealed record DomesticUsage(decimal Balance, decimal TodayCost);
+
 public sealed class BalanceService : IDisposable
 {
     private const string Origin = "https://xc.lifesecretary.com:8000";
+    // pucn is a new-api instance: username login with a session cookie, quota in credits.
+    private const string DomesticOrigin = "https://pucn.lifesecretary.com:9000";
+    private const decimal DefaultQuotaPerUnit = 500 * 1000m;
     private readonly HttpClient client;
+    private readonly HttpClient domestic;
     private readonly string cachePath;
+    private string? domesticToken;
+    private string domesticIdentity = "";
+    private DateTimeOffset domesticExpires;
+    // The site allows only 20 login attempts per 20 minutes per IP, so back off on 429 instead of retrying every refresh.
+    private DateTimeOffset domesticRetryAt;
     public BalanceService(HttpClient? client = null, string? cachePath = null)
     {
         this.client = client ?? new HttpClient(new HttpClientHandler { AllowAutoRedirect = false });
         this.client.Timeout = TimeSpan.FromSeconds(20);
+        domestic = new HttpClient(new HttpClientHandler { AllowAutoRedirect = false }) { Timeout = TimeSpan.FromSeconds(20) };
         this.cachePath = cachePath ?? Path.Combine(SettingsService.DataDirectory, "balance-token.dat");
     }
     public async Task<decimal> ReadAsync(string email, string protectedPassword, CancellationToken cancellation)
@@ -89,6 +101,94 @@ public sealed class BalanceService : IDisposable
         File.Move(cachePath + ".tmp", cachePath, true);
         return token;
     }
+    public async Task<DomesticUsage> ReadDomesticAsync(string username, string protectedPassword, CancellationToken cancellation)
+    {
+        var password = LocalSecret.Unprotect(protectedPassword);
+        if (string.IsNullOrWhiteSpace(username) || password.Length == 0)
+            throw new InvalidOperationException("请在设置中填写国内账户用户名和密码。");
+        for (var attempt = 0; attempt < 2; attempt++)
+        {
+            var token = await DomesticTokenAsync(username, password, cancellation);
+            using var self = await DomesticGetAsync("/api/user/self", token, cancellation);
+            if (self == null) continue;
+            var unit = await DomesticQuotaPerUnitAsync(token, cancellation);
+            var data = self.RootElement.GetProperty("data");
+            if (!data.TryGetProperty("quota", out var quota) || !quota.TryGetInt64(out var value))
+                throw new InvalidOperationException("国内站点未返回有效余额。");
+            return new DomesticUsage(value / unit, await DomesticTodayAsync(token, unit, cancellation));
+        }
+        throw new InvalidOperationException("国内站点登录已失效，请检查用户名密码。");
+    }
+    // new-api authenticates the dashboard with a short-lived JWT (data.access_token), not the cookie.
+    private async Task<string> DomesticTokenAsync(string username, string password, CancellationToken cancellation)
+    {
+        var identity = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(username + "\n" + password)));
+        if (domesticToken != null && domesticIdentity == identity && domesticExpires > DateTimeOffset.UtcNow.AddSeconds(30)) return domesticToken;
+        if (domesticRetryAt > DateTimeOffset.UtcNow)
+            throw new InvalidOperationException($"国内站点请求过于频繁，{(int)Math.Ceiling((domesticRetryAt - DateTimeOffset.UtcNow).TotalSeconds)} 秒后自动重试。");
+        using var response = await domestic.PostAsJsonAsync(DomesticOrigin + "/api/user/login?turnstile=", new { username, password }, cancellation);
+        using var json = await DomesticJsonAsync(response, cancellation);
+        var data = json.RootElement.GetProperty("data");
+        if (!data.TryGetProperty("access_token", out var access) || string.IsNullOrWhiteSpace(access.GetString()))
+            throw new InvalidOperationException("国内站点登录未返回访问令牌，可能需要额外验证。");
+        var seconds = data.TryGetProperty("access_expires_at", out var expiry) && expiry.TryGetInt64(out var at)
+            ? Math.Clamp(at - DateTimeOffset.UtcNow.ToUnixTimeSeconds(), 0, 7 * 86400) : 900;
+        domesticIdentity = identity;
+        domesticExpires = DateTimeOffset.UtcNow.AddSeconds(seconds);
+        return domesticToken = access.GetString()!;
+    }
+    private async Task<JsonDocument?> DomesticGetAsync(string path, string token, CancellationToken cancellation)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Get, DomesticOrigin + path);
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        using var response = await domestic.SendAsync(request, cancellation);
+        if (response.StatusCode != HttpStatusCode.Unauthorized) return await DomesticJsonAsync(response, cancellation);
+        domesticToken = null;
+        return null;
+    }
+    private async Task<decimal> DomesticQuotaPerUnitAsync(string token, CancellationToken cancellation)
+    {
+        using var json = await DomesticGetAsync("/api/status", token, cancellation);
+        return json != null && json.RootElement.TryGetProperty("data", out var data) && data.TryGetProperty("quota_per_unit", out var unit) &&
+            unit.TryGetDouble(out var value) && value > 0 ? (decimal)value : DefaultQuotaPerUnit;
+    }
+    private async Task<decimal> DomesticTodayAsync(string token, decimal unit, CancellationToken cancellation)
+    {
+        var start = new DateTimeOffset(DateTime.Today).ToUnixTimeSeconds();
+        using var json = await DomesticGetAsync($"/api/data/self?start_timestamp={start}&end_timestamp={DateTimeOffset.Now.ToUnixTimeSeconds()}&default_time=hour", token, cancellation);
+        if (json == null) throw new InvalidOperationException("国内站点登录已失效，请检查用户名密码。");
+        if (!json.RootElement.TryGetProperty("data", out var rows) || rows.ValueKind != JsonValueKind.Array) return 0;
+        var total = 0L;
+        foreach (var row in rows.EnumerateArray())
+            if (row.TryGetProperty("quota", out var quota) && quota.TryGetInt64(out var value)) total += value;
+        return total / unit;
+    }
+    private async Task<JsonDocument> DomesticJsonAsync(HttpResponseMessage response, CancellationToken cancellation)
+    {
+        if (!response.IsSuccessStatusCode)
+        {
+            if (response.StatusCode == HttpStatusCode.TooManyRequests)
+            {
+                var retry = Math.Clamp(response.Headers.RetryAfter?.Delta?.TotalSeconds ?? 60, 30, 300);
+                domesticRetryAt = DateTimeOffset.UtcNow.AddSeconds(retry);
+                throw new InvalidOperationException($"国内站点请求过于频繁，{(int)retry} 秒后自动重试（该站点限制 20 分钟 20 次登录）。");
+            }
+            throw new InvalidOperationException(response.StatusCode switch
+            {
+                HttpStatusCode.Unauthorized => "国内站点登录已失效，请检查用户名密码。",
+                HttpStatusCode.Forbidden => "国内站点拒绝了请求，请检查账号权限。",
+                _ => "国内站点请求失败（HTTP " + (int)response.StatusCode + "）。"
+            });
+        }
+        var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync(cancellation));
+        if (!json.RootElement.TryGetProperty("success", out var success) || success.ValueKind != JsonValueKind.True)
+        {
+            var message = json.RootElement.TryGetProperty("message", out var value) ? value.GetString() : null;
+            json.Dispose();
+            throw new InvalidOperationException(string.IsNullOrWhiteSpace(message) ? "国内站点返回失败，请稍后重试。" : "国内站点：" + message);
+        }
+        return json;
+    }
     private static async Task<JsonDocument> ReadResponseAsync(HttpResponseMessage response, CancellationToken cancellation)
     {
         if (!response.IsSuccessStatusCode) throw new InvalidOperationException(response.StatusCode switch
@@ -108,6 +208,6 @@ public sealed class BalanceService : IDisposable
         try { return JsonSerializer.Deserialize<TokenCache>(LocalSecret.Unprotect(File.ReadAllText(cachePath))); }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or JsonException) { return null; }
     }
-    public void Dispose() => client.Dispose();
+    public void Dispose() { client.Dispose(); domestic.Dispose(); }
     private sealed record TokenCache(string Identity, string Token, DateTimeOffset ExpiresAt);
 }

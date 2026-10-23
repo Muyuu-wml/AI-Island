@@ -6,7 +6,7 @@ using System.Threading;
 using System.Threading.Tasks;
 
 namespace AIIsland.Modules;
-public sealed record AppProcess(int Id, string Name, string? Path);
+public sealed record AppProcess(int Id, string Name, string? Path, string? Directory = null);
 public sealed record ProcessSnapshot(IReadOnlyList<AppProcess> Apps)
 {
     public AppProcess? Find(string name) => Apps.FirstOrDefault(p => p.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
@@ -25,7 +25,7 @@ public sealed class ProcessDiscovery
                     string? path = null;
                     try { path = process.MainModule?.FileName; }
                     catch (Exception e) when (e is System.ComponentModel.Win32Exception or InvalidOperationException) { }
-                    result.Add(new(process.Id, name, path));
+                    result.Add(new(process.Id, name, path, name == "opencode" ? AIIsland.Core.ProcessLifetime.Directory(process.Id) : null));
                 }
             }
         }

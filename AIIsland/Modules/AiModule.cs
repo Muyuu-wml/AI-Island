@@ -1,6 +1,7 @@
 using System;
 using System.Collections.ObjectModel;
 using System.Collections.Generic;
+using System.IO;
 using System.Windows.Input;
 using System.Linq;
 using System.Threading;
@@ -127,9 +128,21 @@ public sealed class AiModule : ModuleBase
                 state.Apply(new IslandEvent(session.Provider, session.SessionId, "SessionEnd", DateTimeOffset.UtcNow, AgentId: session.AgentId));
             else session.Connection = connection;
         }
+        // OpenCode V2 reports the shared background service PID, not the CLI PID, and no event
+        // announces a client leaving. A session stays monitored only while an OpenCode process
+        // started in its directory is running; an unreadable directory keeps the session, since
+        // hiding a live one is worse than showing a stale one. Running tasks are never cut short.
+        var services = state.Sessions.Where(s => s.Provider == "OpenCode" && s.ProcessId.HasValue).Select(s => s.ProcessId!.Value).ToHashSet();
+        foreach (var session in state.Sessions.Where(s => s.Provider == "OpenCode" && s.Connection != ConnectionStatus.Offline && !s.Active).ToArray())
+        {
+            if (processes.Apps.Any(p => p.Name.Equals("opencode", StringComparison.OrdinalIgnoreCase) && SameDirectory(p.Directory, session.WorkingDirectory))) continue;
+            var at = DateTimeOffset.UtcNow;
+            state.Apply(new IslandEvent(session.Provider, session.SessionId, "SessionEnd", at > session.LastEventAt ? at : session.LastEventAt.AddMilliseconds(1), AgentId: session.AgentId));
+        }
         var now = DateTimeOffset.UtcNow;
         unlinkedCount = processes.Apps.Count(p =>
             (settings.Codex && p.Name.Equals("codex", StringComparison.OrdinalIgnoreCase) || settings.Claude && p.Name.Equals("claude", StringComparison.OrdinalIgnoreCase) || settings.OpenCode && p.Name.Equals("opencode", StringComparison.OrdinalIgnoreCase)) &&
+            !services.Contains(p.Id) &&
             !state.Sessions.Any(s => s.ProcessId == p.Id && s.Connection != ConnectionStatus.Offline));
         if (now >= nextCompletionCheck)
         {
@@ -143,6 +156,10 @@ public sealed class AiModule : ModuleBase
         }
         state.Expire(now); Update(); return Task.CompletedTask;
     }
+    private static bool SameDirectory(string? left, string? right) =>
+        string.IsNullOrEmpty(left) || string.IsNullOrEmpty(right) ||
+        string.Equals(Path.TrimEndingDirectorySeparator(left), Path.TrimEndingDirectorySeparator(right), StringComparison.OrdinalIgnoreCase);
+
     private void Update()
     {
         var now = DateTimeOffset.UtcNow;
