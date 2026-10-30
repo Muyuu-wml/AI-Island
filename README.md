@@ -1,200 +1,89 @@
 # AI Island
 
-<p align="center">
-  <img src="logo.png" alt="AI Island Logo" width="240" />
-</p>
+Windows 顶部中央的灵动岛：把 **AI 额度与用量**、**AI 会话状态**、**系统监控**和**正在播放的音乐**收进一个面板。
 
-Windows 桌面上的灵动岛式状态面板，使用 C#、.NET 8 和 WPF 开发。集中展示 Codex / Claude Code / OpenCode 会话、系统资源、音乐播放、系统代理和账户余额，支持托盘常驻与开机启动。
+界面与交互参考 [BrimDeck](https://github.com/MoFeng2223/BrimDeck)，核心目标是：只看本机已有的登录与记录，不要求额外注册，不编造数字。
 
-## 功能
+## 当前能力
 
-| 模块 | 功能 |
-| --- | --- |
-| AI 会话 | 通过 Hook / 插件接收 Codex、Claude Code、OpenCode V2 会话事件，展示任务状态、等待确认、完成和失败；支持独立开关、暂停监控和尝试定位关联终端 |
-| 系统资源 | 展示 CPU、内存使用率与磁盘容量 |
-| 音乐 | 接入 QQ 音乐、网易云音乐的 Windows 媒体会话，展示曲目、封面和进度，支持播放 / 暂停、上一首、下一首 |
-| 系统代理 | 读取 Clash Verge Rev 配置，展示并切换 Windows 系统代理；检测到代理冲突或代理守卫时限制操作 |
-| 账户余额 | 同时查询国内（pucn）与国际（xc）两个站点的可用余额和今日消耗，分开显示；支持手动和定时刷新 |
-| 外观与交互 | 边缘触发隐藏（默认：平时藏到屏幕顶部外，把鼠标推到顶部边缘滑出，移开自动收回；有任务进行或等待确认时常驻）、拖动定位、顶部对齐、模块开关与排序、动画、彩虹 / 单色灯条及静态 / 跑马灯 / 呼吸效果 |
+| 模块 | 状态 | 说明 |
+| --- | --- | --- |
+| AI 会话 | 可用 | 通过 Hook 接收 Codex / Claude Code / OpenCode 事件，显示进行中、等待确认、完成、失败；点击可定位终端或会话目录 |
+| 配额 | 可用 | Claude、Codex、OpenCode Go、DeepSeek、New API 中转站、Sub2API 中转站 |
+| 用量 | 可用 | Claude Code、Codex、OpenCode 本机会话记录，汇总今日 / 7 日的 Token 与估算费用 |
+| 系统监控 | 可用 | CPU、内存折线图，网络上下行、磁盘可用空间，占用最高的 8 个进程（带应用图标与负载条） |
+| 音乐 | 可用 | Windows 系统媒体会话（SMTC）：虚化封面背景、标题、播放进度、播放/上一首/下一首 |
+| 分页与动效 | 可用 | 展开后按「会话 / 系统 / 音乐」三页切换，页签可拖动排序并记住顺序，窗口尺寸、淡入与滑动过渡 |
+| 外观 | 可用 | Notch / Capsule / Indicator 三种收起形态，六套配色模板（雾蓝 / 樱花 / 薄荷 / 落日 / 葡萄 / 石墨），全屏自动隐藏 |
 
-AI 模块固定在上方，其他模块可在设置中调整顺序。任务结束 / 失败通知与等待确认通知可分别开关。
+尚未实现（后续里程碑）：GPU 与温度、歌词、主题文件、中英文切换、自定义脚本来源、安装包与自更新。
 
-边缘触发可在设置「通用设置」中关闭：关闭后恢复为顶部常驻。开启时，鼠标推到屏幕顶部、且在面板水平范围内（左右各留约 30px 余量）即可滑出；托盘或右键菜单的「Show Island」会临时钉住面板，点击面板以外的区域后随鼠标离开收回。
+## 数据来源
 
-## 账户余额
+每一列都可以分别选择 **额度来源** 和 **统计来源**。本地用量在后台读取，同一来源的多列共享短期缓存；额度按各列账户分别请求。账户、站点或密钥改变后不复用旧账户缓存，离线数据不触发新预警。
 
-「账户余额」卡片有两列：**可用余额**与**今日消耗**，每列再分 `国内`、`国际` 两行。两个站点各自独立取数，**不求和、不换算**；未填凭据的一方显示 `--`，也不会发起任何请求。
-
-| 站点 | 地址 | 登录方式 | 余额来源 |
+| 来源 | 额度 | 用量 | 需要什么 |
 | --- | --- | --- | --- |
-| 国内 | `pucn.lifesecretary.com:9000`（new-api） | 用户名 + 密码，换取 15 分钟有效的访问令牌 | `quota / quota_per_unit` |
-| 国际 | `xc.lifesecretary.com:8000`（`/api/v1`） | 邮箱 + 密码，换取 access token 并缓存 | 接口直接返回美元余额 |
+| Claude | ✓ | ✓ | 本机登录 Claude Code（`~/.claude`） |
+| Codex | ✓ | ✓ | 本机登录 Codex（`~/.codex`） |
+| OpenCode | ✓ | ✓ | 本机登录 OpenCode（`~/.local/share/opencode`），或填写 OpenCode Go 密钥 |
+| DeepSeek | ✓ | — | DeepSeek 官方 API 密钥（读账户余额，无需站点） |
+| New API 中转站 | ✓ | — | 站点地址 + 令牌 |
+| Sub2API 中转站 | ✓ | — | 站点地址 + 令牌 |
 
-### 国内站
+DeepSeek 官方 API 只有余额接口，没有用量接口，所以这一列只显示余额，不显示「今日 / 7 日」用量（设置页里有说明）。
 
-- 登录 `POST /api/user/login` 取得 JWT，之后所有请求走 `Authorization: Bearer`；令牌只放内存，剩余不足 30 秒或遇到 401 时自动重新登录。
-- 余额 = `quota / quota_per_unit`，汇率取自公开接口 `/api/status` 的 `quota_per_unit`（默认 500000 配额 = $1）。站点改汇率后无需发版。
-- 今日消耗 = 当天（本机零点到当前）`/api/data/self` 每行 `quota` 之和 ÷ `quota_per_unit`。站点面板上的「近 24 小时消耗」口径不同，数值对不上属正常。
-- 登录接口限流 **20 次 / 20 分钟 / 每 IP**。程序只在令牌过期或失效时登录；遇到 429 按 `Retry-After` 退避（最多 5 分钟），退避期间不再出网。被拒绝的请求不占额度，窗口结束后自动恢复，不需要重启。
-- 若站点开启了 Turnstile 或两步验证，自动登录会被拒绝，卡片上会显示对应错误。
+所以监控的账号 **不限于官方密钥**：
 
-### 国际站
+- 官方订阅：读本机登录态，不需要填写任何东西；
+- 官方 API 密钥：在设置里填写（DPAPI 加密）；
+- 第三方中转：New API / Sub2API 两种协议；
+- 其他：后续会加自定义脚本。
 
-- `GET /api/v1/auth/me` 的 `balance` 直接是美元余额，`GET /api/v1/usage/dashboard/stats` 的 `today_cost` 是站点统计的今日消耗（`Asia/Shanghai`）。
-- access token 加密缓存在 `balance-token.dat`，过期或 401 时自动重新登录。
+### 桌面端能不能监控
 
-### 凭据与刷新
+- **OpenCode**：可以。CLI 与桌面版共用 `~/.local/share/opencode`，全局插件目录 `~/.config/opencode/plugins` 会在启动时自动加载。设置里的「安装 Hook」会写入插件。
+- **Codex**：可以安装，但桌面版有已知缺口。Codex 读取同一份 `~/.codex/hooks.json`，`SessionStart` / `UserPromptSubmit` / `Stop` / `PermissionRequest` 通常可用；Windows 上 `command_execution` 的 `PreToolUse` 可能不触发（openai/codex#24453），因此「等待确认」以 `PermissionRequest` 为准。
+- **Claude Code**：Hook 写入 `~/.claude/settings.json`，额度与用量读取 Claude Code 的登录与本机会话记录。Claude 桌面应用是否共用这份登录取决于版本，当前不单独适配。
+- **定位来源**：CLI 会话根据 Hook 捕获的终端 PID 聚焦窗口；桌面版没有终端时退化为打开会话目录。
 
-- 两站密码都用 Windows DPAPI 绑定当前 Windows 用户加密，保存在 `settings.json`（`BalancePassword` / `PucnPassword`），文件里看不到明文。
-- 刷新间隔 10–86400 秒，设 0 时只手动刷新；卡片底部按钮为「刷新余额与消耗」。
-- 余额模块启用后会向对应站点发起登录和查询请求，请求内容仅限账号、余额与用量。
+## 隐私
 
-## 环境
+- 只读取本机已有登录状态和会话记录；不续期、不修改任何登录。
+- 登录令牌只在请求期间保存在内存；手动填写的密钥使用 Windows DPAPI 加密，保存在 `%LOCALAPPDATA%\AIIsland\secrets.dat`。
+- 访问网络只用于读取额度；不读取、不上传对话内容。
+- 日志只记录异常类型与消息，不记录提示词、工具参数或返回内容。
 
-- Windows 桌面环境；项目目标框架为 `net8.0-windows10.0.19041.0`，建议 Windows 10 2004 或更新版本。
-- 源码构建需要 .NET 8 SDK 和 PowerShell。脚本优先使用项目内 `.dotnet/dotnet.exe`，不存在时使用 PATH 中的 `dotnet`。
-- 普通发布的主程序需要 .NET 8 Windows Desktop Runtime；Hook 桥接程序需要 .NET 8 Runtime。开发机安装相应 SDK 后可运行。
-- 单文件打包面向 Windows x64，主程序自带运行时；Hook 仍单独发布，不包含在主程序单文件中。
-- 首次还原或打包需要下载对应 NuGet 依赖和运行时包。
+数据目录：`%LOCALAPPDATA%\AIIsland`
 
 ## 构建与运行
 
-在项目根目录执行。重新构建或打包前，先从托盘菜单退出正在运行的 AI Island（程序运行时 `artifacts/app/*.dll` 被占用，发布会失败）。
+需要 Windows 10 2004+ / Windows 11 与 .NET 8 SDK。项目自带 `.dotnet` 时脚本会优先使用它。
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build.ps1
-```
-
-脚本构建解决方案，并发布到以下目录：
-
-| 输出 | 用途 |
-| --- | --- |
-| `artifacts/app/` | WPF 主程序及运行依赖 |
-| `artifacts/hook/` | CLI Hook 桥接程序及运行依赖 |
-
-启动主程序：
-
-```powershell
 .\artifacts\app\AIIsland.exe
 ```
 
-右键面板或托盘图标打开设置、暂停 / 恢复 AI 监控或退出。设置修改后点击「保存」。同一 Windows 用户重复启动时仅保留一个实例。
+首次运行后打开托盘 → 设置 → **安装 / 修复 Hook**，然后重启对应的 AI 工具。
 
-### 单文件打包
+打包（单文件、自带运行时）：
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/package.ps1
 ```
 
-脚本先执行构建，再生成自包含的 Windows x64 主程序，输出到 `artifacts/package/app/`，并复制为项目根目录的 `AIIsland.exe`。
+## 结构
 
-## CLI Hook 接入
-
-先执行构建，确保 `artifacts/hook/AIIsland.Hook.exe` 存在，然后安装：
-
-```powershell
-# 同时接入 Codex、Claude Code 和 OpenCode V2
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts/Install-Hooks.ps1
-
-# 只接入一种 CLI，Provider 可选 Codex、Claude、OpenCode、All
-# Both 保留为仅 Codex + Claude 的兼容选项；默认 All
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts/Install-Hooks.ps1 -Provider Codex
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts/Install-Hooks.ps1 -Provider OpenCode
-
-# 移除本项目安装的 Hook
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts/Install-Hooks.ps1 -Uninstall
+```
+src/AIIsland.Core/     纯逻辑：来源、定价、会话状态机、系统监控
+src/AIIsland/          WPF 界面、托盘、设置、音乐
+src/AIIsland.Hook/     CLI Hook 桥接，写入共享收件箱
+tests/AIIsland.Tests/  无依赖的控制台测试
+integrations/opencode/ OpenCode 全局插件
+scripts/               构建与打包
 ```
 
-安装脚本合并 Hook 配置，并在修改已有配置前生成 `.ai-island-<标识>.bak` 备份。默认配置位置：
+Hook 事件统一写入 `%LOCALAPPDATA%\AIIsland\inbox`，主程序轮询并折叠成会话状态。普通事件只监控状态；Claude 的权限请求可在岛内逐项批准或拒绝，最多等待 60 秒，超时显示“请在终端确认”。并行请求独立处理，没有工具 ID 的请求不会因其他工具完成而取消。关闭会话监控或退出岛后，等待中的 Hook 自动交还终端。Codex / OpenCode 目前仅监控状态。
 
-| CLI | 配置位置 |
-| --- | --- |
-| Codex | `%USERPROFILE%/.codex/hooks.json`；设置了 `CODEX_HOME` 时使用该目录 |
-| Claude | `%USERPROFILE%/.claude/settings.json`；设置了 `CLAUDE_CONFIG_DIR` 时使用该目录 |
-| OpenCode V2 | `%USERPROFILE%/.config/opencode/plugins/ai-island/`；设置了 `XDG_CONFIG_HOME` 时使用其下的 `opencode/plugins/ai-island/` |
-
-也可传入 `-ConfigRoot <目录>`，脚本会使用该目录下的 `.codex`、`.claude` 和 `.config/opencode` 子目录。
-
-安装后重启 CLI 会话；若 Codex 提示审核 Hook，按其 `/hooks` 界面提示操作。接入需要 CLI 版本支持脚本注册的 Hook 事件。安装脚本写入桥接程序的绝对路径，因此移动项目后需要重新安装 Hook，并保留 `artifacts/hook/` 中的完整运行文件。
-
-### OpenCode V2
-
-接入面向 OpenCode V2 的服务端插件 API（按 2.0.26 事件协议实现）。插件自动发现，无需修改 `opencode.json(c)`，也无需额外安装 npm 依赖。更新或卸载前，已有插件备份到 OpenCode 配置目录下的 `ai-island-backups/`。
-
-- 安装后在设置中启用 **OpenCode**，提交新任务，在「监控接入状态」查看事件是否到达。全局插件通常自动加载；未加载时，在方便结束当前工作的时机执行 `opencode service restart`。
-- 监控执行开始、思考、并行工具执行、权限等待、完成、失败、中断和会话删除；子会话按独立 session ID 展示。任务失败后的 idle 事件不会误报完成。
-- 在线状态关联 **OpenCode 后台服务进程**。关闭一个终端不会将仍由服务托管的会话标为离线；删除会话、卸载插件或服务退出后离线。重启 AI Island 可恢复已记录的在线会话，任务状态等待新事件同步。
-- 服务可供多个界面使用，因此面板不会尝试将服务进程定位成某个终端标签页；请在 OpenCode 中选择对应会话。
-- 插件仅转发本地状态元数据，不保存提示词、回答、工具参数、结果或错误正文。
-
-仅移除 OpenCode 接入：
-
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts/Install-Hooks.ps1 -Provider OpenCode -Uninstall
-```
-
-## 配置与数据
-
-数据保存在当前 Windows 用户的 `%LOCALAPPDATA%/AIIsland/`，与源码目录分开：
-
-| 路径 | 内容 |
-| --- | --- |
-| `settings.json` | 模块开关、顺序、外观、位置、通知、余额账户配置等 |
-| `balance-token.dat` | 国际站登录 token 的加密缓存（国内站令牌只在内存中，不落盘） |
-| `inbox/` | 等待主程序消费的 Hook 事件文件 |
-| `inbox/sessions/` | 用于恢复在线会话的会话标识、项目目录及进程信息 |
-
-重启程序或电脑不会清空已保存的设置。配置文件缺失、损坏或无法读取时，程序使用默认设置。开机启动通过当前用户注册表的 `Software\Microsoft\Windows\CurrentVersion\Run` 配置。
-
-余额密码在 `settings.json` 中加密保存，绑定当前 Windows 用户。余额刷新间隔支持 10–86400 秒，设置为 0 时仅手动刷新；token 失效时会尝试重新登录。
-
-Hook 桥接程序不记录原始提示词、回答或工具参数，只写入状态同步所需的元数据。Codex 完成状态补偿会读取本机会话记录。余额模块启用后会向对应服务发起登录和查询请求。
-
-## 项目结构
-
-```text
-AIIsland/                 WPF 主程序
-  Assets/                 应用图标
-  Core/                   会话状态与注册信息
-  Modules/                AI、音乐、代理、资源和余额模块
-  Services/               设置、事件读取、系统接口与余额查询等服务
-  UI/                     面板、设置窗口与控件
-AIIsland.Hook/            CLI 事件桥接程序
-integrations/opencode/   OpenCode V2 服务端插件与事件适配
-tests/                   状态机、事件适配与接入回归检查
-scripts/
-  build.ps1               构建并发布主程序与 Hook
-  package.ps1             打包 Windows x64 自包含主程序
-  Install-Hooks.ps1       安装 / 卸载 CLI Hook
-.dotnet/                  项目内 .NET SDK（存在时优先使用）
-artifacts/                构建与打包输出
-AIIsland.sln              解决方案
-NuGet.Config              NuGet 源配置
-logo.png                  项目标识
-```
-
-## 常见问题
-
-- **AI 会话没有任务状态**：确认对应模块已启用、Hook 已安装，重启 CLI 后提交一次任务；右键面板查看「监控接入状态」。仅发现 Agent 进程不代表已经收到 Hook 事件。
-- **重启后会话仍在线但任务状态未恢复**：在线会话信息可以恢复，当前任务状态需要等待新的 Hook 同步；已退出进程不会作为在线会话恢复。
-- **直接关闭 PowerShell 后的退出监控**：会话同时跟踪 Agent 和启动它的 shell 进程。即使未收到退出 Hook、Agent 子进程仍存活，shell 退出后也会在下一次刷新时判定会话离线。更新前已经关闭终端的旧会话可能缺少 shell 信息；更新后重新启动 CLI 会话即可完整记录。
-- **国内余额一直是 `--`，提示请求过于频繁**：pucn 登录限流 20 次 / 20 分钟 / 每 IP。程序会按服务端 `Retry-After` 退避（最多 5 分钟），期间不发起登录，窗口结束后自动恢复；耐心等待即可，不要连续点刷新或反复重启。
-- **国内余额 `--` 但没有频率提示**：检查设置里的 pucn 用户名和密码；用户名是站点的账号名（例如 `xc-wangmengli`），不是邮箱。若站点开启了人机验证或两步验证，自动登录会失败并给出提示。
-- **今日消耗和站点面板对不上**：国际站用站点统计的今日消耗，国内站按本机零点累加当天用量；站点面板若显示「近 24 小时」，两者数值本来就不同。
-- **音乐没有信息或无法控制**：需要音乐客户端运行并提供 Windows 媒体会话，具体可用操作取决于客户端暴露的能力。
-- **代理开关不可用**：检查 Clash Verge Rev 是否运行、配置能否读取，以及是否存在代理守卫、PAC 或其他代理冲突。
-- **无法直接跳转到终端标签页**：程序只在能够可靠关联时激活终端窗口；多标签页仍需手动选择，无法定位时会显示提示。
-- **打包提示程序正在运行**：先从托盘退出 AI Island，再重新执行打包脚本。
-
-## 回归检查
-
-需要 Node.js（支持 `node --test`）和 .NET 8 SDK：
-
-```powershell
-node --test tests/opencode.test.mjs
-.\.dotnet\dotnet.exe run --project tests/AIIsland.Tests/AIIsland.Tests.csproj -c Release
-# 先运行 build.ps1，供安装测试定位桥接程序；仅操作 artifacts 下的临时配置
-powershell -NoProfile -ExecutionPolicy Bypass -File tests/install-opencode.ps1
-```
-
-未使用项目内 SDK 时，将第二条命令中的 `.\.dotnet\dotnet.exe` 替换为 `dotnet`。
+测试使用独立临时目录，结束后自动删除，不改写真实设置和密钥文件。

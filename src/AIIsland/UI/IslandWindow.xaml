@@ -1,0 +1,551 @@
+<Window x:Class="AIIsland.UI.IslandWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ui="clr-namespace:AIIsland.UI"
+        xmlns:vm="clr-namespace:AIIsland.ViewModels"
+        Title="AI Island"
+        SizeToContent="Manual"
+        WindowStyle="None" AllowsTransparency="True" Background="Transparent"
+        ShowInTaskbar="False" Topmost="True" ResizeMode="NoResize"
+        SnapsToDevicePixels="True" UseLayoutRounding="True"
+        MouseEnter="ShellMouseEnter" MouseLeave="ShellMouseLeave" MouseDoubleClick="ShellDoubleClick">
+
+    <Window.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVis" />
+        <ui:CountToVisibilityConverter x:Key="CountToVisibility" />
+
+        <!-- Indicator colors; replaced at runtime from the selected palette. -->
+        <SolidColorBrush x:Key="CpuBrush" Color="#8FA8C8" />
+        <SolidColorBrush x:Key="MemoryBrush" Color="#7FC8A9" />
+        <SolidColorBrush x:Key="NetDownBrush" Color="#8FA8C8" />
+        <SolidColorBrush x:Key="NetUpBrush" Color="#6FC7C2" />
+        <SolidColorBrush x:Key="MusicBrush" Color="#E88AAF" />
+
+        <Style x:Key="PageTab" TargetType="RadioButton">
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Margin" Value="2,0" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="RadioButton">
+                        <Border x:Name="pill" CornerRadius="7" Padding="12,4" Background="Transparent">
+                            <ContentPresenter x:Name="text" Opacity="0.58" VerticalAlignment="Center" HorizontalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="pill" Property="Background" Value="#2B3A57" />
+                                <Setter TargetName="text" Property="Opacity" Value="1" />
+                            </Trigger>
+                            <MultiTrigger>
+                                <MultiTrigger.Conditions>
+                                    <Condition Property="IsMouseOver" Value="True" />
+                                    <Condition Property="IsChecked" Value="False" />
+                                </MultiTrigger.Conditions>
+                                <Setter TargetName="pill" Property="Background" Value="#1B2130" />
+                                <Setter TargetName="text" Property="Opacity" Value="0.85" />
+                            </MultiTrigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </Window.Resources>
+
+    <Border x:Name="Shell" CornerRadius="0,0,20,20" HorizontalAlignment="Center" VerticalAlignment="Top" ClipToBounds="True"
+            Background="{DynamicResource PanelBrush}"
+            BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,0,1,1"
+            MouseRightButtonUp="ShellRightClick">
+        <Grid>
+            <!-- Collapsed notch / capsule -->
+            <DockPanel x:Name="CompactPanel" Margin="18,8" Height="26" Cursor="Hand"
+                       MouseLeftButtonUp="CompactClick">
+                <StackPanel x:Name="CompactStats" DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                    <Rectangle Width="1" Height="14" Fill="{DynamicResource LineBrush}" Margin="6,0,8,0" />
+
+                    <Grid Width="18" Height="18" Background="Transparent" ToolTip="{Binding Monitor.Cpu}"
+                          Visibility="{Binding Monitor.ShowCpuRing, Converter={StaticResource BoolToVis}}">
+                        <ui:UsageRing Width="18" Height="18" Thickness="2.5" Accent="{DynamicResource CpuBrush}" Percent="{Binding Monitor.CpuPercent}" />
+                        <TextBlock Text="C" FontSize="8" FontWeight="Bold" Foreground="{DynamicResource CpuBrush}"
+                                   HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    </Grid>
+                    <Grid Width="18" Height="18" Margin="5,0,0,0" Background="Transparent" ToolTip="{Binding Monitor.Memory}"
+                          Visibility="{Binding Monitor.ShowMemRing, Converter={StaticResource BoolToVis}}">
+                        <ui:UsageRing Width="18" Height="18" Thickness="2.5" Accent="{DynamicResource MemoryBrush}" Percent="{Binding Monitor.MemoryPercent}" />
+                        <TextBlock Text="M" FontSize="8" FontWeight="Bold" Foreground="{DynamicResource MemoryBrush}"
+                                   HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    </Grid>
+
+                    <TextBlock x:Name="CompactNetDown" Text="{Binding Monitor.CompactDown}" FontSize="10" FontWeight="SemiBold"
+                               Foreground="{DynamicResource NetDownBrush}" Margin="9,0,0,0" VerticalAlignment="Center"
+                               Visibility="{Binding Monitor.HasNetwork, Converter={StaticResource BoolToVis}}" />
+                    <TextBlock x:Name="CompactNetUp" Text="{Binding Monitor.CompactUp}" FontSize="10" FontWeight="SemiBold"
+                               Foreground="{DynamicResource NetUpBrush}" Margin="6,0,0,0" VerticalAlignment="Center"
+                               Visibility="{Binding Monitor.HasNetwork, Converter={StaticResource BoolToVis}}" />
+
+                    <TextBlock Text="{Binding Clock}" FontSize="12" FontWeight="SemiBold"
+                               Foreground="{DynamicResource TextBrush}" Margin="10,0,0,0" VerticalAlignment="Center" />
+                </StackPanel>
+
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center" ClipToBounds="True">
+                    <Ellipse Width="7" Height="7" Fill="{DynamicResource AccentBrush}" VerticalAlignment="Center" />
+
+                    <ItemsControl ItemsSource="{Binding Columns}" VerticalAlignment="Center" Margin="9,0,0,0">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate><StackPanel Orientation="Horizontal" /></ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <StackPanel Orientation="Horizontal" Margin="0,0,10,0" ToolTip="{Binding Status}">
+                                    <ui:UsageRing Width="22" Height="22" Percent="{Binding Peak}" Full="{Binding RingFull}" Accent="{Binding Accent}" Thickness="3" />
+                                    <TextBlock Text="{Binding PeakText}" FontSize="11" Margin="5,0,0,0" VerticalAlignment="Center"
+                                               Visibility="{Binding PeakVisibility}" />
+                                </StackPanel>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                        <StackPanel.Style>
+                            <Style TargetType="StackPanel">
+                                <Style.Triggers>
+                                    <MultiDataTrigger>
+                                        <MultiDataTrigger.Conditions>
+                                            <Condition Binding="{Binding CompactSessions}" Value="" />
+                                            <Condition Binding="{Binding Music.IsPlaying}" Value="False" />
+                                        </MultiDataTrigger.Conditions>
+                                        <Setter Property="Visibility" Value="Collapsed" />
+                                    </MultiDataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </StackPanel.Style>
+
+                        <Rectangle x:Name="CompactDivider" Width="1" Height="14" Fill="{DynamicResource LineBrush}" Margin="2,0,10,0" />
+                        <TextBlock x:Name="CompactSessionsText" Text="{Binding CompactSessions}" Style="{StaticResource Muted}" VerticalAlignment="Center"
+                                   MaxWidth="130" TextTrimming="CharacterEllipsis" />
+                        <ui:PlayingBars x:Name="CompactMusicBars" Width="20" Height="14" Fill="{DynamicResource MusicBrush}" Margin="10,0,0,0"
+                                        VerticalAlignment="Center" ToolTip="{Binding Music.Title}"
+                                        Visibility="{Binding Music.IsPlaying, Converter={StaticResource BoolToVis}}" />
+                    </StackPanel>
+                </StackPanel>
+            </DockPanel>
+
+            <!-- Expanded panel -->
+            <Border x:Name="ExpandedPanel" Visibility="Collapsed" Width="620" Padding="18,12,18,16">
+                <StackPanel>
+                    <Grid Margin="0,0,0,10">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                            <Ellipse Width="8" Height="8" Fill="{DynamicResource AccentBrush}" VerticalAlignment="Center" />
+                            <TextBlock Text="AI ISLAND" FontSize="11" FontWeight="SemiBold" Margin="8,0,0,0" VerticalAlignment="Center" />
+                        </StackPanel>
+
+                        <Grid x:Name="TabsHost" Grid.Column="1" HorizontalAlignment="Center" VerticalAlignment="Center">
+                            <StackPanel x:Name="TabsPanel" Orientation="Horizontal" Background="Transparent"
+                                        PreviewMouseLeftButtonDown="TabsMouseDown" PreviewMouseMove="TabsMouseMove"
+                                        PreviewMouseLeftButtonUp="TabsMouseUp" LostMouseCapture="TabsLostCapture">
+                                <RadioButton x:Name="TabAi" GroupName="pages"
+                                             Style="{StaticResource PageTab}" Tag="ai" Checked="PageTabChecked"
+                                             ToolTip="会话" AutomationProperties.Name="会话">
+                                    <TextBlock Text="&#xE8BD;" FontFamily="Segoe MDL2 Assets" FontSize="14" />
+                                </RadioButton>
+                                <RadioButton x:Name="TabSystem" GroupName="pages"
+                                             Style="{StaticResource PageTab}" Tag="system" Checked="PageTabChecked"
+                                             ToolTip="系统" AutomationProperties.Name="系统">
+                                    <TextBlock Text="&#xE950;" FontFamily="Segoe MDL2 Assets" FontSize="14" />
+                                </RadioButton>
+                                <RadioButton x:Name="TabMusic" GroupName="pages"
+                                             Style="{StaticResource PageTab}" Tag="music" Checked="PageTabChecked"
+                                             ToolTip="音乐" AutomationProperties.Name="音乐">
+                                    <TextBlock Text="&#xE8D6;" FontFamily="Segoe MDL2 Assets" FontSize="14" />
+                                </RadioButton>
+                            </StackPanel>
+
+                            <Border x:Name="TabDropMarker" Width="2" Height="16" CornerRadius="1"
+                                    Background="{DynamicResource AccentBrush}" HorizontalAlignment="Left" VerticalAlignment="Center"
+                                    IsHitTestVisible="False" Visibility="Collapsed" />
+                        </Grid>
+
+                        <StackPanel Grid.Column="2" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                            <TextBlock Text="{Binding Clock}" FontSize="12" FontWeight="SemiBold"
+                                   Foreground="{DynamicResource TextBrush}" VerticalAlignment="Center" Margin="0,0,10,0" />
+                            <Button Content="✕" Style="{StaticResource GhostButton}" FontSize="12"
+                                    Click="CollapseClick" ToolTip="收起" />
+                        </StackPanel>
+                    </Grid>
+
+                    <Grid x:Name="PagesHost" ClipToBounds="True">
+                    <StackPanel x:Name="PageAi">
+
+                    <!-- Sessions -->
+                    <Border Background="{DynamicResource CardBrush}" CornerRadius="12" Padding="10,8" Margin="0,0,0,10"
+                            Visibility="{Binding HasSessions, Converter={StaticResource BoolToVis}}">
+                        <ItemsControl ItemsSource="{Binding Sessions}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Border CornerRadius="8" Padding="8,6" Background="Transparent" Cursor="Hand"
+                                            MouseLeftButtonUp="SessionClick" ToolTip="点击定位来源">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto" />
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <Grid.RowDefinitions>
+                                                <RowDefinition Height="Auto" />
+                                                <RowDefinition Height="Auto" />
+                                            </Grid.RowDefinitions>
+                                            <Ellipse Width="7" Height="7" Fill="{Binding StateBrush}" VerticalAlignment="Center" Margin="0,0,9,0" />
+                                            <StackPanel Grid.Column="1">
+                                                <TextBlock Text="{Binding Title}" FontSize="12" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                                                <TextBlock Text="{Binding Detail}" Style="{StaticResource Muted}" FontSize="10" TextTrimming="CharacterEllipsis" />
+                                            </StackPanel>
+                                            <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                                                <TextBlock Text="{Binding StateText}" Foreground="{Binding StateBrush}" FontSize="11" VerticalAlignment="Center" />
+                                                <TextBlock Text="{Binding Time}" Style="{StaticResource Muted}" FontSize="10" Margin="8,0,0,0" VerticalAlignment="Center" />
+                                            </StackPanel>
+                                            <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding ToolText}" ToolTip="{Binding ToolText}"
+                                                       Visibility="{Binding ToolVisibility}" FontFamily="Consolas" FontSize="10"
+                                                       Foreground="#F5A524" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" Margin="0,4,8,0" />
+                                            <StackPanel Grid.Row="1" Grid.Column="2" Orientation="Horizontal" Margin="0,4,0,0"
+                                                        Visibility="{Binding DecisionVisibility}">
+                                                <Button Content="批准" Style="{StaticResource GhostButton}" Foreground="#31C48D" FontSize="11"
+                                                        Click="AllowClick" ToolTip="在 AI Island 中允许这次工具调用" />
+                                                <Button Content="拒绝" Style="{StaticResource GhostButton}" Foreground="#F05252" FontSize="11"
+                                                        Click="DenyClick" Margin="4,0,0,0" ToolTip="拒绝并告知 Claude" />
+                                            </StackPanel>
+                                        </Grid>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </Border>
+
+                    <!-- Quota columns -->
+                    <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled" Margin="0,0,0,10">
+                        <ItemsControl ItemsSource="{Binding Columns}">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate><StackPanel Orientation="Horizontal" /></ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Border Background="{DynamicResource CardBrush}" CornerRadius="12" Padding="12,10"
+                                            Width="192" Margin="0,0,10,0">
+                                        <StackPanel>
+                                            <Grid>
+                                                <StackPanel Orientation="Horizontal">
+                                                    <ui:UsageRing Width="38" Height="38" Percent="{Binding Peak}" Full="{Binding RingFull}" Accent="{Binding Accent}" />
+                                                    <StackPanel Margin="9,0,0,0" VerticalAlignment="Center">
+                                                        <TextBlock Text="{Binding Name}" FontWeight="SemiBold" FontSize="12" />
+                                                        <TextBlock Text="{Binding Status}" Style="{StaticResource Muted}" FontSize="10"
+                                                                   TextTrimming="CharacterEllipsis" MaxWidth="120" ToolTip="{Binding Error}" />
+                                                    </StackPanel>
+                                                </StackPanel>
+                                                <TextBlock Text="{Binding PeakText}" FontSize="15" FontWeight="SemiBold"
+                                                           HorizontalAlignment="Right" VerticalAlignment="Center"
+                                                           Visibility="{Binding PeakVisibility}" />
+                                            </Grid>
+
+                                            <ItemsControl ItemsSource="{Binding Lines}" Margin="0,8,0,0">
+                                                <ItemsControl.ItemTemplate>
+                                                    <DataTemplate>
+                                                        <Grid Margin="0,2">
+                                                            <StackPanel Orientation="Horizontal">
+                                                                <TextBlock Text="{Binding Title}" Style="{StaticResource Muted}" FontSize="10" />
+                                                                <TextBlock Text="{Binding Value}" FontSize="11" FontWeight="SemiBold" Margin="6,0,0,0" />
+                                                                <TextBlock Text="{Binding Suffix}" Style="{StaticResource Muted}" FontSize="9" Margin="3,1,0,0" />
+                                                            </StackPanel>
+                                                            <TextBlock Text="{Binding Reset}" Style="{StaticResource Muted}" FontSize="9"
+                                                                       HorizontalAlignment="Right" VerticalAlignment="Center" />
+                                                        </Grid>
+                                                    </DataTemplate>
+                                                </ItemsControl.ItemTemplate>
+                                            </ItemsControl>
+
+                                            <StackPanel Visibility="{Binding ShowUsage, Converter={StaticResource BoolToVis}}">
+                                                <Rectangle Height="1" Fill="{DynamicResource LineBrush}" Margin="0,7" />
+                                                <TextBlock Text="{Binding Today}" Style="{StaticResource Muted}" FontSize="10" />
+                                                <TextBlock Text="{Binding Week}" Style="{StaticResource Muted}" FontSize="10" />
+                                                <ui:UsageBars Height="34" Margin="0,6,0,0" Days="{Binding UsageDays}" Fill="{Binding Accent}"
+                                                              LabelBrush="{DynamicResource MutedBrush}" />
+                                            </StackPanel>
+                                            <TextBlock Text="{Binding Error}" Foreground="{DynamicResource DangerBrush}" FontSize="9"
+                                                       TextWrapping="Wrap" Margin="0,4,0,0"
+                                                       Visibility="{Binding HasError, Converter={StaticResource BoolToVis}}" />
+                                        </StackPanel>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </ScrollViewer>
+
+                    </StackPanel>
+
+                    <!-- System page -->
+                    <StackPanel x:Name="PageSystem" Visibility="Collapsed">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+
+                            <Border Background="{DynamicResource CardBrush}" CornerRadius="12" Padding="12,10" Margin="0,0,5,0">
+                                <StackPanel>
+                                    <DockPanel>
+                                        <TextBlock DockPanel.Dock="Right" Text="CPU" Style="{StaticResource Muted}" FontSize="10" VerticalAlignment="Center" />
+                                        <TextBlock Text="{Binding Monitor.Cpu}" FontSize="13" FontWeight="SemiBold" />
+                                    </DockPanel>
+                                    <ui:Sparkline x:Name="CpuSpark" Height="44" Margin="0,7,0,0" Stroke="#5B8CFF" />
+                                </StackPanel>
+                            </Border>
+
+                            <Border Grid.Column="1" Background="{DynamicResource CardBrush}" CornerRadius="12" Padding="12,10" Margin="5,0,0,0">
+                                <StackPanel>
+                                    <DockPanel>
+                                        <TextBlock DockPanel.Dock="Right" Text="内存" Style="{StaticResource Muted}" FontSize="10" VerticalAlignment="Center" />
+                                        <TextBlock Text="{Binding Monitor.Memory}" FontSize="11" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                                    </DockPanel>
+                                    <ui:Sparkline x:Name="MemSpark" Height="44" Margin="0,7,0,0" Stroke="#34D399" />
+                                </StackPanel>
+                            </Border>
+                        </Grid>
+
+                        <Border Background="{DynamicResource CardBrush}" CornerRadius="12" Padding="12,9" Margin="0,10,0,0">
+                            <StackPanel>
+                                <TextBlock Text="{Binding Monitor.Network}" FontSize="11" FontWeight="SemiBold" />
+                                <TextBlock Text="{Binding Monitor.Disks}" Style="{StaticResource Muted}" FontSize="10" Margin="0,4,0,0"
+                                           TextTrimming="CharacterEllipsis" Visibility="{Binding Monitor.DisksVisibility}" />
+                            </StackPanel>
+                        </Border>
+
+                        <Border Background="{DynamicResource CardBrush}" CornerRadius="12" Padding="12,10" Margin="0,10,0,0">
+                            <StackPanel>
+                                <Grid Margin="0,0,0,5">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="18" />
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="46" />
+                                        <ColumnDefinition Width="46" />
+                                        <ColumnDefinition Width="62" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="1" Text="进程" Style="{StaticResource Muted}" FontSize="10" Margin="6,0,0,0" />
+                                    <TextBlock Grid.Column="3" Text="{Binding CpuHeader}" FontSize="10"
+                                               HorizontalAlignment="Right" VerticalAlignment="Center" Cursor="Hand"
+                                               Background="Transparent" Padding="5,3" Tag="cpu"
+                                               ToolTip="点击按 CPU 排序，再次点击切换升序/降序" MouseLeftButtonUp="ProcessSortClick">
+                                        <TextBlock.Style>
+                                            <Style TargetType="TextBlock" BasedOn="{StaticResource Muted}">
+                                                <Style.Triggers>
+                                                    <Trigger Property="IsMouseOver" Value="True">
+                                                        <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
+                                                    </Trigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </TextBlock.Style>
+                                    </TextBlock>
+                                    <TextBlock Grid.Column="4" Text="{Binding MemoryHeader}" FontSize="10"
+                                               HorizontalAlignment="Right" VerticalAlignment="Center" Cursor="Hand"
+                                               Background="Transparent" Padding="5,3" Tag="memory"
+                                               ToolTip="点击按内存排序，再次点击切换升序/降序" MouseLeftButtonUp="ProcessSortClick">
+                                        <TextBlock.Style>
+                                            <Style TargetType="TextBlock" BasedOn="{StaticResource Muted}">
+                                                <Style.Triggers>
+                                                    <Trigger Property="IsMouseOver" Value="True">
+                                                        <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
+                                                    </Trigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </TextBlock.Style>
+                                    </TextBlock>
+                                </Grid>
+
+                                <ItemsControl ItemsSource="{Binding Processes}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Grid Margin="0,3">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="18" />
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="46" />
+                                                    <ColumnDefinition Width="46" />
+                                                    <ColumnDefinition Width="62" />
+                                                </Grid.ColumnDefinitions>
+
+                                                <Grid Width="16" Height="16" VerticalAlignment="Center">
+                                                    <Border Background="#1E2430" CornerRadius="4" Visibility="{Binding InitialVisibility}">
+                                                        <TextBlock Text="{Binding Initial}" FontSize="8" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                                   Foreground="{DynamicResource MutedBrush}" />
+                                                    </Border>
+                                                    <Image Source="{Binding Icon}" Stretch="Uniform" RenderOptions.BitmapScalingMode="HighQuality"
+                                                           Visibility="{Binding IconVisibility}" />
+                                                </Grid>
+
+                                                <TextBlock Grid.Column="1" Text="{Binding Name}" FontSize="11" TextTrimming="CharacterEllipsis"
+                                                           Margin="6,0,6,0" VerticalAlignment="Center" />
+                                                <ProgressBar Grid.Column="2" Style="{StaticResource SlimBar}" Maximum="100" Value="{Binding CpuValue}"
+                                                             Height="5" VerticalAlignment="Center" Foreground="{Binding CpuBrush}" />
+                                                <TextBlock Grid.Column="3" Text="{Binding Cpu}" FontSize="10" HorizontalAlignment="Right"
+                                                           Foreground="{Binding CpuBrush}" VerticalAlignment="Center" />
+                                                <TextBlock Grid.Column="4" Text="{Binding Memory}" FontSize="10" HorizontalAlignment="Right"
+                                                           Foreground="{DynamicResource MutedBrush}" VerticalAlignment="Center" />
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+
+                    <!-- Music page -->
+                    <StackPanel x:Name="PageMusic" Visibility="Collapsed">
+                        <Border CornerRadius="14" ClipToBounds="True" Height="168">
+                            <Grid>
+                                <Rectangle Fill="{DynamicResource CardBrush}" />
+                                <Grid>
+                                    <Grid.CacheMode>
+                                        <BitmapCache />
+                                    </Grid.CacheMode>
+                                    <Image Source="{Binding Music.Cover}" Stretch="UniformToFill" Opacity="0.55">
+                                        <Image.Effect>
+                                            <BlurEffect Radius="55" />
+                                        </Image.Effect>
+                                    </Image>
+                                </Grid>
+                                <Rectangle>
+                                    <Rectangle.Fill>
+                                        <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                                            <GradientStop Color="#D90B0D12" Offset="0" />
+                                            <GradientStop Color="#F20B0D12" Offset="1" />
+                                        </LinearGradientBrush>
+                                    </Rectangle.Fill>
+                                </Rectangle>
+
+                                <Grid Margin="16,14">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                    </Grid.RowDefinitions>
+
+                                    <Border Width="92" Height="92" CornerRadius="10" ClipToBounds="True" Background="#1E2430">
+                                        <Grid>
+                                            <TextBlock Text="&#xE8D6;" FontFamily="Segoe MDL2 Assets" FontSize="30"
+                                                       Foreground="{DynamicResource MutedBrush}" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                       Visibility="{Binding Music.GlyphVisibility}" />
+                                            <Image Source="{Binding Music.Cover}" Stretch="UniformToFill" RenderOptions.BitmapScalingMode="HighQuality" />
+                                        </Grid>
+                                    </Border>
+
+                                    <StackPanel Grid.Column="1" Margin="16,0,8,0" VerticalAlignment="Center">
+                                        <TextBlock Text="{Binding Music.Title}" FontSize="17" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                                        <TextBlock Text="{Binding Music.Artist}" Style="{StaticResource Muted}" FontSize="11" Margin="0,5,0,0" TextTrimming="CharacterEllipsis" />
+                                        <StackPanel Orientation="Horizontal" Margin="0,9,0,0"
+                                                    Visibility="{Binding Music.IsPlaying, Converter={StaticResource BoolToVis}}">
+                                            <StackPanel Orientation="Horizontal" Height="14" VerticalAlignment="Center">
+                                                <Rectangle Width="3" Height="14" RadiusX="1.5" RadiusY="1.5" Fill="#34D399" VerticalAlignment="Bottom"
+                                                           RenderTransformOrigin="0.5,1" Margin="0,0,3,0">
+                                                    <Rectangle.RenderTransform>
+                                                        <ScaleTransform ScaleY="0.5" />
+                                                    </Rectangle.RenderTransform>
+                                                    <Rectangle.Triggers>
+                                                        <EventTrigger RoutedEvent="Loaded">
+                                                            <BeginStoryboard>
+                                                                <Storyboard RepeatBehavior="Forever" AutoReverse="True">
+                                                                    <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleY)"
+                                                                                     From="0.35" To="1" Duration="0:0:0.42" />
+                                                                </Storyboard>
+                                                            </BeginStoryboard>
+                                                        </EventTrigger>
+                                                    </Rectangle.Triggers>
+                                                </Rectangle>
+                                                <Rectangle Width="3" Height="14" RadiusX="1.5" RadiusY="1.5" Fill="#34D399" VerticalAlignment="Bottom"
+                                                           RenderTransformOrigin="0.5,1" Margin="0,0,3,0">
+                                                    <Rectangle.RenderTransform>
+                                                        <ScaleTransform ScaleY="0.8" />
+                                                    </Rectangle.RenderTransform>
+                                                    <Rectangle.Triggers>
+                                                        <EventTrigger RoutedEvent="Loaded">
+                                                            <BeginStoryboard>
+                                                                <Storyboard RepeatBehavior="Forever" AutoReverse="True">
+                                                                    <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleY)"
+                                                                                     From="0.25" To="1" Duration="0:0:0.62" BeginTime="0:0:0.12" />
+                                                                </Storyboard>
+                                                            </BeginStoryboard>
+                                                        </EventTrigger>
+                                                    </Rectangle.Triggers>
+                                                </Rectangle>
+                                                <Rectangle Width="3" Height="14" RadiusX="1.5" RadiusY="1.5" Fill="#34D399" VerticalAlignment="Bottom"
+                                                           RenderTransformOrigin="0.5,1" Margin="0,0,3,0">
+                                                    <Rectangle.RenderTransform>
+                                                        <ScaleTransform ScaleY="0.6" />
+                                                    </Rectangle.RenderTransform>
+                                                    <Rectangle.Triggers>
+                                                        <EventTrigger RoutedEvent="Loaded">
+                                                            <BeginStoryboard>
+                                                                <Storyboard RepeatBehavior="Forever" AutoReverse="True">
+                                                                    <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleY)"
+                                                                                     From="0.4" To="1" Duration="0:0:0.35" />
+                                                                </Storyboard>
+                                                            </BeginStoryboard>
+                                                        </EventTrigger>
+                                                    </Rectangle.Triggers>
+                                                </Rectangle>
+                                                <Rectangle Width="3" Height="14" RadiusX="1.5" RadiusY="1.5" Fill="#34D399" VerticalAlignment="Bottom"
+                                                           RenderTransformOrigin="0.5,1">
+                                                    <Rectangle.RenderTransform>
+                                                        <ScaleTransform ScaleY="0.7" />
+                                                    </Rectangle.RenderTransform>
+                                                    <Rectangle.Triggers>
+                                                        <EventTrigger RoutedEvent="Loaded">
+                                                            <BeginStoryboard>
+                                                                <Storyboard RepeatBehavior="Forever" AutoReverse="True">
+                                                                    <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleY)"
+                                                                                     From="0.3" To="1" Duration="0:0:0.52" BeginTime="0:0:0.2" />
+                                                                </Storyboard>
+                                                            </BeginStoryboard>
+                                                        </EventTrigger>
+                                                    </Rectangle.Triggers>
+                                                </Rectangle>
+                                            </StackPanel>
+                                            <TextBlock Text="正在播放" FontSize="10" Foreground="#34D399" Margin="8,0,0,0" VerticalAlignment="Center" />
+                                        </StackPanel>
+                                    </StackPanel>
+
+                                    <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                                        <Button Style="{StaticResource TransportButton}" Click="PreviousClick">
+                                            <TextBlock Text="&#xE892;" FontFamily="Segoe MDL2 Assets" FontSize="13" />
+                                        </Button>
+                                        <Button Style="{StaticResource PlayButton}" Click="PlayClick">
+                                            <TextBlock Text="{Binding Music.PlayGlyph}" FontFamily="Segoe MDL2 Assets" FontSize="15" Foreground="#FFFFFF" />
+                                        </Button>
+                                        <Button Style="{StaticResource TransportButton}" Click="NextClick">
+                                            <TextBlock Text="&#xE893;" FontFamily="Segoe MDL2 Assets" FontSize="13" />
+                                        </Button>
+                                    </StackPanel>
+
+                                    <StackPanel Grid.Row="1" Grid.ColumnSpan="3" Margin="0,15,0,0">
+                                        <ProgressBar Style="{StaticResource SlimBar}" Height="5" Maximum="1" Value="{Binding Music.Progress}"
+                                                     Foreground="{DynamicResource AccentBrush}" />
+                                        <Grid Margin="0,5,0,0">
+                                            <TextBlock Text="{Binding Music.Position}" FontSize="10" Foreground="{DynamicResource MutedBrush}" />
+                                            <TextBlock Text="{Binding Music.Duration}" FontSize="10" Foreground="{DynamicResource MutedBrush}"
+                                                       HorizontalAlignment="Right" />
+                                        </Grid>
+                                    </StackPanel>
+                                </Grid>
+                            </Grid>
+                        </Border>
+                    </StackPanel>
+                    </Grid>
+                </StackPanel>
+            </Border>
+        </Grid>
+    </Border>
+</Window>

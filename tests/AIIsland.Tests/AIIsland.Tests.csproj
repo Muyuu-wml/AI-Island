@@ -2,9 +2,11 @@
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <TargetFramework>net8.0-windows10.0.19041.0</TargetFramework>
-    <UseWPF>true</UseWPF>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>AIIsland.Tests</AssemblyName>
   </PropertyGroup>
-  <ItemGroup><ProjectReference Include="../../AIIsland/AIIsland.csproj" /></ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../src/AIIsland.Core/AIIsland.Core.csproj" />
+  </ItemGroup>
 </Project>

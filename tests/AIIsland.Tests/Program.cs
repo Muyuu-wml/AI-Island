@@ -1,103 +1,189 @@
-using System.Diagnostics;
-using System.IO;
-using System.Text.Json;
 using AIIsland.Core;
-using AIIsland.Modules;
-using AIIsland.Services;
+using AIIsland.Core.Monitoring;
+using AIIsland.Core.Sessions;
 
-static void Check(bool condition, string message)
+if (args.Contains("--probe"))
 {
-    if (!condition) throw new Exception(message);
+    await Probe();
+    return 0;
 }
 
-var at = DateTimeOffset.UtcNow;
-var state = new IslandState();
-IslandEvent Event(string kind, string provider = "OpenCode", string session = "ses_test") => new(provider, session, kind, at = at.AddMilliseconds(1));
-Check(state.Apply(Event("UserPromptSubmit")), "OpenCode starts a task");
-var task = state.Sessions.Single();
-var started = task.StartedAt;
-state.Apply(Event("PreToolUse"));
-state.Apply(Event("PermissionRequest"));
-Check(task.Status == AIStatus.WaitingForApproval, "Approval state");
-state.Apply(Event("PreToolUse"));
-state.Apply(Event("Thinking"));
-Check(task.StartedAt == started && task.Status == AIStatus.Thinking, "Phase changes preserve task duration");
-state.Apply(Event("StopFailure"));
-Check(task.Status == AIStatus.Failed && !task.Active, "Failure ends task");
-state.Apply(Event("Thinking"));
-state.Apply(Event("Stop"));
-Check(task.Status == AIStatus.Completed, "Next task completes");
-state.Apply(Event("SessionEnd"));
-Check(task.Connection == ConnectionStatus.Offline, "Session closes");
-state.Apply(Event("Thinking"));
-Check(task.Active && task.Connection == ConnectionStatus.Online, "A reloaded plugin resumes an existing session");
-Check(!state.Apply(Event("Thinking", "Claude")), "OpenCode-only event is rejected for other providers");
-foreach (var provider in new[] { "Codex", "Claude" })
+var failures = 0;
+
+void Check(string name, bool condition)
 {
-    Check(state.Apply(Event("UserPromptSubmit", provider)), provider + " start regression");
-    Check(state.Apply(Event("Stop", provider)), provider + " completion regression");
+    if (condition) { Console.WriteLine($"PASS {name}"); return; }
+    failures++;
+    Console.WriteLine($"FAIL {name}");
 }
-Check(!state.Apply(Event("UserPromptSubmit", "Unknown")), "Unknown provider rejected");
-Check(JsonSerializer.Deserialize<Settings>("{\"Codex\":false}")!.OpenCode, "Old settings enable OpenCode by default");
-Check(!JsonSerializer.Deserialize<Settings>(JsonSerializer.Serialize(new Settings { OpenCode = false }))!.OpenCode, "Disabled setting round-trips");
-var ownDirectory = ProcessLifetime.Directory(Environment.ProcessId);
-Check(ownDirectory != null && Path.TrimEndingDirectorySeparator(Path.GetFullPath(ownDirectory)) == Path.TrimEndingDirectorySeparator(Environment.CurrentDirectory), "OpenCode client directory is readable");
 
-var directory = Path.Combine(Path.GetTempPath(), "ai-island-tests-" + Guid.NewGuid().ToString("N"));
-Directory.CreateDirectory(directory);
-try
+Check("usage totals", UsageTotals.From(new[]
 {
-    using var process = Process.GetCurrentProcess();
-    var live = Event("SessionStart") with { ProcessId = process.Id, ProcessStartedAt = process.StartTime.ToUniversalTime(), WorkingDirectory = directory };
-    var registry = Path.Combine(directory, "registry");
-    SessionRegistry.Remember(registry, live);
-    var recovered = new List<IslandEvent>();
-    SessionRegistry.Read(registry, recovered.Add);
-    Check(recovered.Count == 1 && recovered[0].Provider == "OpenCode" && recovered[0].ShellProcessId == null, "Service session recovery");
-    SessionRegistry.Remember(registry, live with { Kind = "SessionEnd" });
-    Check(!Directory.EnumerateFiles(registry).Any(), "Deleted sessions are not restored");
+    new UsageRecord(DateTimeOffset.Now, "m", 100, 20, 30, 5, 0.5m),
+    new UsageRecord(DateTimeOffset.Now, "m", 200, 40, 0, 0, null),
+}).TotalTokens == 395);
 
-    var inboxPath = Path.Combine(directory, "inbox");
-    using var module = new AiModule(new Settings(), new EventInbox(inboxPath));
-    var approvals = 0; var completions = 0;
-    module.ApprovalRequested += _ => approvals++;
-    module.Completed += _ => completions++;
-    async Task Deliver(string kind, params AppProcess[] apps)
+Check("daily usage buckets", DailyBuckets());
+Check("quota alert fires", Alerts(new QuotaLine("5 小时", 85)).Single().Key == "c:quota");
+Check("quota alert below threshold", !Alerts(new QuotaLine("5 小时", 50)).Any());
+Check("balance alert fires", Alerts(new QuotaLine("账户余额", null, "¥3.20")).Single().Key == "c:balance");
+Check("balance alert ignores used amounts", !Alerts(new QuotaLine("今日", null, "$1.00", "已用")).Any());
+Check("balance alert above threshold", !Alerts(new QuotaLine("余额", null, "$25", "USD")).Any());
+
+Check("pricing matches prefix", Pricing.Load(null).Estimate("claude-sonnet-4-5", 1_000_000, 0, 0, 0) == 3m);
+Check("pricing unknown", Pricing.Load(null).Estimate("mystery-model", 1, 1, 1, 1) is null);
+
+Check("claude session start", Apply("SessionStart").State == SessionState.Idle);
+Check("claude prompt runs", Apply("UserPromptSubmit").State == SessionState.Running);
+Check("claude permission waits", Apply("PermissionRequest").State == SessionState.Waiting);
+Check("claude stop done", Apply("Stop").State == SessionState.Done);
+Check("claude failure", Apply("StopFailure").State == SessionState.Failed);
+Check("permission request keeps tool", PermissionPending());
+Check("old inbox event still parses", System.Text.Json.JsonSerializer.Deserialize<ActivityEvent>(
+    """{"Provider":"Claude","SessionId":"s","EventName":"Stop","At":"2026-10-29T00:00:00+00:00"}""") is { RequestId: null, EventName: "Stop" });
+Check("permission reply file", PermissionReply());
+
+Check("settings roundtrip", Roundtrip());
+Check("secrets roundtrip", Secrets());
+Check("deepseek balance", DeepSeekBalance());
+Check("palettes", Palettes.All.Select(palette => palette.Id).Distinct().Count() == Palettes.All.Count
+    && Palettes.All.All(palette => new[] { palette.Accent, palette.Cpu, palette.Memory, palette.Down, palette.Up, palette.Music }
+        .All(hex => System.Text.RegularExpressions.Regex.IsMatch(hex, "^#[0-9A-Fa-f]{6}$")))
+    && Palettes.Find("nope") == Palettes.All[0]);
+
+await RegressionTests.Run(Check);
+
+Console.WriteLine(failures == 0 ? "ALL PASS" : $"{failures} FAILED");
+return failures == 0 ? 0 : 1;
+
+static SessionItem Apply(string name)
+{
+    var item = new SessionItem { Provider = "claude", SessionId = "s" };
+    item.Apply(new ActivityEvent("claude", "s", "SessionStart", DateTimeOffset.Now, null, null, null, null, null, null, null, null, null));
+    item.Apply(new ActivityEvent("claude", "s", name, DateTimeOffset.Now, null, null, null, null, null, null, null, null, null));
+    return item;
+}
+
+static bool PermissionPending()
+{
+    var item = new SessionItem { Provider = "Claude", SessionId = "s" };
+    item.Apply(new ActivityEvent("Claude", "s", "PermissionRequest", DateTimeOffset.Now, null, null, null, null, null, null, null, null, null,
+        "Bash", "npm test", "abc123"));
+    var pending = item.PendingRequestId == "abc123" && item.PendingToolName == "Bash" && item.PendingToolDetail == "npm test";
+    item.Apply(new ActivityEvent("Claude", "s", "PostToolUse", DateTimeOffset.Now, null, null, null, null, null, null, null, null, null));
+    return pending && item.PendingRequestId == "abc123" && item.State == SessionState.Waiting;
+}
+
+static bool PermissionReply()
+{
+    var directory = TestDirectory();
+    try
     {
-        var value = Event(kind) with { ProcessId = live.ProcessId, ProcessStartedAt = live.ProcessStartedAt, WorkingDirectory = directory };
-        File.WriteAllText(Path.Combine(inboxPath, Guid.NewGuid() + ".json"), JsonSerializer.Serialize(value));
-        await module.RefreshAsync(new ProcessSnapshot(apps), CancellationToken.None);
+        PermissionReplies.Write("abc123", allow: false, directory);
+        var json = File.ReadAllText(Path.Combine(directory, "abc123.json"));
+        var rejected = false;
+        try { PermissionReplies.Write("..\\evil", allow: true, directory); }
+        catch (ArgumentException) { rejected = true; }
+        PermissionReplies.Cancel("def456", directory);
+        var cancel = File.ReadAllText(Path.Combine(directory, "def456.json"));
+        return json == """{"behavior":"deny"}""" && cancel == """{"behavior":"cancel"}""" && rejected && Directory.GetFiles(directory).Length == 2;
     }
-    at = DateTimeOffset.UtcNow.AddMilliseconds(50);
-    await Deliver("UserPromptSubmit");
-    await Deliver("PermissionRequest");
-    await Deliver("PermissionRequest");
-    Check(approvals == 1 && module.NeedsAttention, "Repeated approval snapshots notify only once");
-    await Deliver("Thinking");
-    await Deliver("Stop");
-    Check(completions == 1 && module.Groups.Single().Name == "OpenCode", "Inbox-to-UI completion and grouping");
-    module.Configure(new Settings { OpenCode = false });
-    await Deliver("UserPromptSubmit");
-    Check(module.Groups.Count == 0, "Disabled OpenCode ignores events");
-    module.Configure(new Settings());
-    await Deliver("Thinking");
-    Check(module.ActiveCount == 1, "Re-enabled OpenCode resumes on a phase event");
-    // The plugin reports the shared background service PID; only a CLI started in the session's
-    // own directory keeps that session monitored.
-    var service = new AppProcess(live.ProcessId!.Value, "opencode", null, @"C:\Users\service");
-    var client = new AppProcess(live.ProcessId!.Value + 100000, "opencode", null, directory);
-    var elsewhere = new AppProcess(live.ProcessId!.Value + 200000, "opencode", null, directory + "-other");
-    await Deliver("UserPromptSubmit", service, client);
-    await Deliver("Stop", service, client);
-    Check(module.ActiveCount == 0 && module.MonitoredCount == 1, "An attached client keeps an idle session");
-    await module.RefreshAsync(new ProcessSnapshot(new[] { service, elsewhere }), CancellationToken.None);
-    Check(module.MonitoredCount == 0 && module.Groups.SelectMany(g => g.Rows).All(r => r.Status != "等待输入"), "Closing the CLI ends the idle OpenCode session");
-    at = DateTimeOffset.UtcNow.AddSeconds(1); // A new prompt arrives after the synthetic session end.
-    await Deliver("UserPromptSubmit", service, elsewhere);
-    Check(module.ActiveCount == 1, "A running task stays tracked without a client");
-    module.TogglePause();
-    await Deliver("PermissionRequest");
-    Check(module.ActiveCount == 0, "Paused monitoring ignores events");
+    finally
+    {
+        Directory.Delete(directory, true);
+    }
 }
-finally { Directory.Delete(directory, true); }
-Console.WriteLine("OpenCode state, settings, recovery and inbox integration checks passed.");
+
+static List<UsageAlert> Alerts(params QuotaLine[] lines)
+{
+    var quota = new QuotaReading { State = SourceState.Ok, Lines = lines };
+    var snapshot = new ColumnSnapshot(new ColumnSettings { Id = "c", Name = "测试" }, quota, default, default, Array.Empty<UsageRecord>(), null);
+    return ColumnService.CheckAlerts(snapshot, new AlertSettings()).ToList();
+}
+
+static bool DailyBuckets()
+{
+    var today = new DateOnly(2026, 10, 29);
+    DateTimeOffset At(int day, int hour) => new(new DateTime(2026, 10, day, hour, 0, 0, DateTimeKind.Local));
+    var days = DailyUsage.From(new[]
+    {
+        new UsageRecord(At(29, 9), "m", 10, 0, 0, 0, 1m),
+        new UsageRecord(At(29, 23), "m", 5, 0, 0, 0, null),
+        new UsageRecord(At(27, 12), "m", 7, 0, 0, 0, null),
+        new UsageRecord(At(20, 12), "m", 99, 0, 0, 0, null),
+    }, today);
+    return days.Count == 7 && days[0].Date == new DateOnly(2026, 10, 23) && days[^1].Date == today
+        && days[^1].Tokens == 15 && days[^1].Cost == 1m && days[^3].Tokens == 7
+        && days.Sum(day => day.Tokens) == 22;
+}
+
+static bool Roundtrip()
+{
+    var directory = TestDirectory();
+    try
+    {
+        var store = new SettingsStore(directory);
+        var settings = new IslandSettings { Style = CompactStyle.Capsule, Language = "en-US" };
+        settings.Columns[0].Site = "https://example.com";
+        store.Save(settings);
+        var loaded = store.Load();
+        return loaded.Style == CompactStyle.Capsule && loaded.Language == "en-US" && loaded.Columns[0].Site == "https://example.com";
+    }
+    finally
+    {
+        Directory.Delete(directory, true);
+    }
+}
+
+static bool DeepSeekBalance()
+{
+    using var document = System.Text.Json.JsonDocument.Parse(
+        """{"is_available":true,"balance_infos":[{"currency":"CNY","total_balance":"110.00","granted_balance":"10.00","topped_up_balance":"100.00"}]}""");
+    var lines = AIIsland.Core.Providers.DeepSeekSource.Parse(document.RootElement);
+    return lines.Count == 3
+           && lines[0].Value == "¥110.00"
+           && lines[1].Title == "赠送余额"
+           && lines[2].Value == "¥100.00";
+}
+
+static bool Secrets()
+{
+    var directory = TestDirectory();
+    try
+    {
+        var store = SecretStore.Load(directory);
+        store.Set("t", "secret");
+        store.Save();
+        return SecretStore.Load(directory).Get("t") == "secret";
+    }
+    finally
+    {
+        Directory.Delete(directory, true);
+    }
+}
+
+static string TestDirectory() => Directory.CreateDirectory(Path.Combine(
+    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Temp", "opencode", "aiisland-test-" + Guid.NewGuid().ToString("N"))).FullName;
+
+static async Task Probe()
+{
+    foreach (var source in SourceCatalog.All)
+    {
+        Console.WriteLine($"== {source.Name} ({source.Id}) ==");
+        var quota = SourceCatalog.CreateQuota(source.Id);
+        if (quota is not null)
+        {
+            var reading = await quota.ReadAsync(new SourceContext(), CancellationToken.None);
+            Console.WriteLine($"  quota: {reading.State} {reading.Status} {reading.Error}");
+            foreach (var line in reading.Lines)
+                Console.WriteLine($"    {line.Title}: {line.Value} {line.Suffix} {line.Reset}");
+        }
+        var usage = SourceCatalog.CreateUsage(source.Id);
+        if (usage is not null)
+        {
+            var records = await usage.ReadAsync(new SourceContext(), DateTimeOffset.Now.AddDays(-7), CancellationToken.None);
+            var totals = UsageTotals.From(records);
+            Console.WriteLine($"  usage: {totals.Requests} requests, {Human.Tokens(totals.TotalTokens)} tokens, {Human.Money(totals.Cost)}");
+        }
+    }
+}

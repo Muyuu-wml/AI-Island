@@ -4,14 +4,9 @@
 artifacts/
 .vs/
 /AIIsland.exe
-
-# Local additions for PowerShell exit monitoring
-/AIIsland/Core/ProcessLifetime.cs
-
-# Local secrets and user-specific configuration
-**/settings.json
-**/balance-token.dat
 *.user
 *.suo
 .env
 .env.*
+**/settings.json
+**/balance-token.dat
