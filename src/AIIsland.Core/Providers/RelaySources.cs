@@ -4,8 +4,7 @@ using System.Text.Json;
 namespace AIIsland.Core.Providers;
 
 /// <summary>
-/// New API style relay: uses the OpenAI-compatible billing endpoints, which work with
-/// a plain site token on most forks.
+/// New API relay: prefer token quotas; retain compatible billing for older forks.
 /// </summary>
 public sealed class NewApiSource : IQuotaSource
 {
@@ -21,6 +20,22 @@ public sealed class NewApiSource : IQuotaSource
         var baseUrl = Http.TrimSite(site.ToString());
         try
         {
+            var tokenUsage = await GetJson(baseUrl + "/api/usage/token/", context.Key, token);
+            if (tokenUsage is { ValueKind: JsonValueKind.Object } response
+                && response.TryGetProperty("data", out var data) && data.ValueKind == JsonValueKind.Object
+                && Numbers.Text(data, "object") == "token_usage")
+            {
+                var status = await GetJson(baseUrl + "/api/status", context.Key, token);
+                decimal? quotaPerUnit = null;
+                if (status is { ValueKind: JsonValueKind.Object } info
+                    && info.TryGetProperty("data", out var settings) && settings.ValueKind == JsonValueKind.Object)
+                    quotaPerUnit = Numbers.Decimal(settings, "quota_per_unit");
+                var tokenLines = ParseTokenUsage(data, quotaPerUnit);
+                return tokenLines.Count == 0
+                    ? QuotaReading.Failure("未找到有效的令牌额度或计费单位")
+                    : new QuotaReading { State = SourceState.Ok, Lines = tokenLines, Status = site.Host + "/api/usage/token/" };
+            }
+
             var subscription = await GetJson(baseUrl + "/v1/dashboard/billing/subscription", context.Key, token);
             if (subscription is null) return QuotaReading.Failure("订阅接口无响应");
             var limit = Numbers.Decimal(subscription.Value, "hard_limit_usd")
@@ -59,8 +74,28 @@ public sealed class NewApiSource : IQuotaSource
         request.Headers.TryAddWithoutValidation("Authorization", "Bearer " + key);
         using var response = await Http.Client.SendAsync(request, token);
         if (!response.IsSuccessStatusCode) return null;
-        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync(token));
-        return document.RootElement.Clone();
+        try
+        {
+            using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync(token));
+            return document.RootElement.Clone();
+        }
+        catch (JsonException) { return null; }
+    }
+
+    internal static List<QuotaLine> ParseTokenUsage(JsonElement data, decimal? quotaPerUnit)
+    {
+        var lines = new List<QuotaLine>();
+        if (data.ValueKind != JsonValueKind.Object || !data.TryGetProperty("unlimited_quota", out var unlimited)
+            || unlimited.ValueKind is not (JsonValueKind.True or JsonValueKind.False)) return lines;
+
+        // Unlimited tokens can report negative remaining units; neither value is the account wallet.
+        if (unlimited.GetBoolean()) lines.Add(new QuotaLine("令牌额度", null, "不限额"));
+        if (quotaPerUnit is not > 0) return lines;
+        if (!unlimited.GetBoolean() && Numbers.Decimal(data, "total_available") is { } remaining)
+            lines.Add(new QuotaLine("令牌剩余", null, "$" + (remaining / quotaPerUnit.Value).ToString("0.##", CultureInfo.InvariantCulture), "USD"));
+        if (Numbers.Decimal(data, "total_used") is { } used && used >= 0)
+            lines.Add(new QuotaLine("累计", null, "$" + (used / quotaPerUnit.Value).ToString("0.##", CultureInfo.InvariantCulture), "已用"));
+        return lines;
     }
 
     private static async Task<decimal?> GetUsage(string baseUrl, string key, string start, string end, CancellationToken token)
@@ -81,6 +116,7 @@ public sealed class Sub2ApiSource : IQuotaSource
 {
     private static readonly string[] Endpoints =
     {
+        "/v1/usage",
         "/api/v1/usage",
         "/api/v1/auth/me",
         "/api/v1/user/self",
@@ -123,9 +159,16 @@ public sealed class Sub2ApiSource : IQuotaSource
         return QuotaReading.Failure("未识别到 Sub2API 的额度字段，可改用自定义脚本");
     }
 
-    private static List<QuotaLine> Parse(JsonElement root)
+    internal static List<QuotaLine> Parse(JsonElement root)
     {
         var lines = new List<QuotaLine>();
+        if (root.ValueKind != JsonValueKind.Object) return lines;
+
+        // API-key usage responses keep the wallet beside, not inside, usage.
+        AddMoney(lines, root, "balance", "余额");
+        AddMoney(lines, root, "remaining", "余额");
+        AddMoney(lines, root, "total_balance", "余额");
+
         var data = root;
         foreach (var wrapper in new[] { "data", "usage", "quota", "wallet", "subscription" })
             if (data.TryGetProperty(wrapper, out var inner) && inner.ValueKind == JsonValueKind.Object)
@@ -141,6 +184,15 @@ public sealed class Sub2ApiSource : IQuotaSource
         AddMoney(lines, data, "today_usage", "今日");
         AddMoney(lines, data, "used", "已用");
 
+        var usage = data;
+        if (data.TryGetProperty("usage", out var nested) && nested.ValueKind == JsonValueKind.Object)
+            usage = nested;
+        if (usage.TryGetProperty("today", out var today) && today.ValueKind == JsonValueKind.Object)
+        {
+            AddMoney(lines, today, "actual_cost", "今日");
+            AddMoney(lines, today, "cost", "今日");
+        }
+
         foreach (var (name, title) in new[] { ("daily_quota", "每日"), ("weekly_quota", "每周"), ("monthly_quota", "每月") })
         {
             if (!data.TryGetProperty(name, out var quota) || quota.ValueKind != JsonValueKind.Object) continue;
@@ -155,6 +207,7 @@ public sealed class Sub2ApiSource : IQuotaSource
 
     private static void AddMoney(List<QuotaLine> lines, JsonElement data, string name, string title)
     {
+        if (lines.Any(line => line.Title == title)) return;
         if (!data.TryGetProperty(name, out var value)) return;
         if (value.ValueKind == JsonValueKind.Number)
             lines.Add(new QuotaLine(title, null, value.GetDecimal().ToString("0.##", CultureInfo.InvariantCulture), "USD"));

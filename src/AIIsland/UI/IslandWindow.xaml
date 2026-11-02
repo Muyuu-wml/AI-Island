@@ -225,62 +225,60 @@
                     </Border>
 
                     <!-- Quota columns -->
-                    <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled" Margin="0,0,0,10">
-                        <ItemsControl ItemsSource="{Binding Columns}">
-                            <ItemsControl.ItemsPanel>
-                                <ItemsPanelTemplate><StackPanel Orientation="Horizontal" /></ItemsPanelTemplate>
-                            </ItemsControl.ItemsPanel>
-                            <ItemsControl.ItemTemplate>
-                                <DataTemplate>
-                                    <Border Background="{DynamicResource CardBrush}" CornerRadius="12" Padding="12,10"
-                                            Width="192" Margin="0,0,10,0">
-                                        <StackPanel>
-                                            <Grid>
-                                                <StackPanel Orientation="Horizontal">
-                                                    <ui:UsageRing Width="38" Height="38" Percent="{Binding Peak}" Full="{Binding RingFull}" Accent="{Binding Accent}" />
-                                                    <StackPanel Margin="9,0,0,0" VerticalAlignment="Center">
-                                                        <TextBlock Text="{Binding Name}" FontWeight="SemiBold" FontSize="12" />
-                                                        <TextBlock Text="{Binding Status}" Style="{StaticResource Muted}" FontSize="10"
-                                                                   TextTrimming="CharacterEllipsis" MaxWidth="120" ToolTip="{Binding Error}" />
-                                                    </StackPanel>
+                    <ItemsControl ItemsSource="{Binding Columns}" Margin="-5,0,-5,0">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate><UniformGrid Columns="3" /></ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Border Background="{DynamicResource CardBrush}" CornerRadius="12" Padding="10"
+                                        Margin="5,0,5,10">
+                                    <StackPanel>
+                                        <Grid>
+                                            <StackPanel Orientation="Horizontal">
+                                                <ui:UsageRing Width="38" Height="38" Percent="{Binding Peak}" Full="{Binding RingFull}" Accent="{Binding Accent}" />
+                                                <StackPanel Margin="9,0,0,0" VerticalAlignment="Center">
+                                                    <TextBlock Text="{Binding Name}" FontWeight="SemiBold" FontSize="12" />
+                                                    <TextBlock Text="{Binding Status}" Style="{StaticResource Muted}" FontSize="10"
+                                                               TextTrimming="CharacterEllipsis" MaxWidth="120" ToolTip="{Binding Error}" />
                                                 </StackPanel>
-                                                <TextBlock Text="{Binding PeakText}" FontSize="15" FontWeight="SemiBold"
-                                                           HorizontalAlignment="Right" VerticalAlignment="Center"
-                                                           Visibility="{Binding PeakVisibility}" />
-                                            </Grid>
-
-                                            <ItemsControl ItemsSource="{Binding Lines}" Margin="0,8,0,0">
-                                                <ItemsControl.ItemTemplate>
-                                                    <DataTemplate>
-                                                        <Grid Margin="0,2">
-                                                            <StackPanel Orientation="Horizontal">
-                                                                <TextBlock Text="{Binding Title}" Style="{StaticResource Muted}" FontSize="10" />
-                                                                <TextBlock Text="{Binding Value}" FontSize="11" FontWeight="SemiBold" Margin="6,0,0,0" />
-                                                                <TextBlock Text="{Binding Suffix}" Style="{StaticResource Muted}" FontSize="9" Margin="3,1,0,0" />
-                                                            </StackPanel>
-                                                            <TextBlock Text="{Binding Reset}" Style="{StaticResource Muted}" FontSize="9"
-                                                                       HorizontalAlignment="Right" VerticalAlignment="Center" />
-                                                        </Grid>
-                                                    </DataTemplate>
-                                                </ItemsControl.ItemTemplate>
-                                            </ItemsControl>
-
-                                            <StackPanel Visibility="{Binding ShowUsage, Converter={StaticResource BoolToVis}}">
-                                                <Rectangle Height="1" Fill="{DynamicResource LineBrush}" Margin="0,7" />
-                                                <TextBlock Text="{Binding Today}" Style="{StaticResource Muted}" FontSize="10" />
-                                                <TextBlock Text="{Binding Week}" Style="{StaticResource Muted}" FontSize="10" />
-                                                <ui:UsageBars Height="34" Margin="0,6,0,0" Days="{Binding UsageDays}" Fill="{Binding Accent}"
-                                                              LabelBrush="{DynamicResource MutedBrush}" />
                                             </StackPanel>
-                                            <TextBlock Text="{Binding Error}" Foreground="{DynamicResource DangerBrush}" FontSize="9"
-                                                       TextWrapping="Wrap" Margin="0,4,0,0"
-                                                       Visibility="{Binding HasError, Converter={StaticResource BoolToVis}}" />
+                                            <TextBlock Text="{Binding PeakText}" FontSize="15" FontWeight="SemiBold"
+                                                       HorizontalAlignment="Right" VerticalAlignment="Center"
+                                                       Visibility="{Binding PeakVisibility}" />
+                                        </Grid>
+
+                                        <ItemsControl ItemsSource="{Binding Lines}" Margin="0,8,0,0">
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate>
+                                                    <Grid Margin="0,2">
+                                                        <StackPanel Orientation="Horizontal">
+                                                            <TextBlock Text="{Binding Title}" Style="{StaticResource Muted}" FontSize="10" />
+                                                            <TextBlock Text="{Binding Value}" FontSize="11" FontWeight="SemiBold" Margin="6,0,0,0" />
+                                                            <TextBlock Text="{Binding Suffix}" Style="{StaticResource Muted}" FontSize="9" Margin="3,1,0,0" />
+                                                        </StackPanel>
+                                                        <TextBlock Text="{Binding Reset}" Style="{StaticResource Muted}" FontSize="9"
+                                                                   HorizontalAlignment="Right" VerticalAlignment="Center" />
+                                                    </Grid>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+
+                                        <StackPanel Visibility="{Binding ShowUsage, Converter={StaticResource BoolToVis}}">
+                                            <Rectangle Height="1" Fill="{DynamicResource LineBrush}" Margin="0,7" />
+                                            <TextBlock Text="{Binding Today}" Style="{StaticResource Muted}" FontSize="10" />
+                                            <TextBlock Text="{Binding Week}" Style="{StaticResource Muted}" FontSize="10" />
+                                            <ui:UsageBars Height="34" Margin="0,6,0,0" Days="{Binding UsageDays}" Fill="{Binding Accent}"
+                                                          LabelBrush="{DynamicResource MutedBrush}" />
                                         </StackPanel>
-                                    </Border>
-                                </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
-                    </ScrollViewer>
+                                        <TextBlock Text="{Binding Error}" Foreground="{DynamicResource DangerBrush}" FontSize="9"
+                                                   TextWrapping="Wrap" Margin="0,4,0,0"
+                                                   Visibility="{Binding HasError, Converter={StaticResource BoolToVis}}" />
+                                    </StackPanel>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
 
                     </StackPanel>
 

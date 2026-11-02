@@ -46,6 +46,30 @@ Check("permission reply file", PermissionReply());
 Check("settings roundtrip", Roundtrip());
 Check("secrets roundtrip", Secrets());
 Check("deepseek balance", DeepSeekBalance());
+Check("newapi unlimited token is not an account balance", NewApiQuota(
+    """{"unlimited_quota":true,"total_available":-43595837,"total_used":43595837}""", 500000)
+    .SequenceEqual(new[] { new QuotaLine("令牌额度", null, "不限额"), new QuotaLine("累计", null, "$87.19", "已用") }));
+Check("newapi limited token uses site conversion", NewApiQuota(
+    """{"unlimited_quota":false,"total_available":2500,"total_used":1500}""", 1000)
+    .SequenceEqual(new[] { new QuotaLine("令牌剩余", null, "$2.5", "USD"), new QuotaLine("累计", null, "$1.5", "已用") }));
+Check("newapi unknown units do not invent money", NewApiQuota(
+    """{"unlimited_quota":true,"total_used":43595837}""", null)
+    .SequenceEqual(new[] { new QuotaLine("令牌额度", null, "不限额") }));
+Check("newapi zero conversion is rejected", NewApiQuota(
+    """{"unlimited_quota":false,"total_available":2500,"total_used":1500}""", 0).Count == 0);
+Check("newapi missing quota flag is not a zero balance", NewApiQuota("{}", 500000).Count == 0);
+Check("sub2api wallet beside usage and actual charge", Sub2ApiQuota(
+    """{"balance":100.5,"remaining":100.5,"unit":"USD","usage":{"today":{"cost":5,"actual_cost":2}}}""")
+    .SequenceEqual(new[] { new QuotaLine("余额", null, "100.5", "USD"), new QuotaLine("今日", null, "2", "USD") }));
+Check("sub2api zero balance and free usage", Sub2ApiQuota(
+    """{"balance":0,"remaining":10,"usage":{"today":{"cost":4,"actual_cost":0}}}""")
+    .SequenceEqual(new[] { new QuotaLine("余额", null, "0", "USD"), new QuotaLine("今日", null, "0", "USD") }));
+Check("sub2api legacy wrapped wallet and quota", Sub2ApiQuota(
+    """{"data":{"remaining":{"amount":25},"today_cost":1,"daily_quota":{"used":2,"limit":10}}}""")
+    .SequenceEqual(new[] { new QuotaLine("余额", null, "25", "USD"), new QuotaLine("今日", null, "1", "USD"), new QuotaLine("每日", 20, "2", "/ 10") }));
+Check("sub2api token counts are not money", Sub2ApiQuota(
+    """{"usage":{"today":{"requests":2,"total_tokens":500}}}""").Count == 0);
+Check("sub2api non-object response", Sub2ApiQuota("[]").Count == 0);
 Check("palettes", Palettes.All.Select(palette => palette.Id).Distinct().Count() == Palettes.All.Count
     && Palettes.All.All(palette => new[] { palette.Accent, palette.Cpu, palette.Memory, palette.Down, palette.Up, palette.Music }
         .All(hex => System.Text.RegularExpressions.Regex.IsMatch(hex, "^#[0-9A-Fa-f]{6}$")))
@@ -160,6 +184,18 @@ static bool Secrets()
     {
         Directory.Delete(directory, true);
     }
+}
+
+static List<QuotaLine> Sub2ApiQuota(string json)
+{
+    using var document = System.Text.Json.JsonDocument.Parse(json);
+    return AIIsland.Core.Providers.Sub2ApiSource.Parse(document.RootElement);
+}
+
+static List<QuotaLine> NewApiQuota(string json, decimal? quotaPerUnit)
+{
+    using var document = System.Text.Json.JsonDocument.Parse(json);
+    return AIIsland.Core.Providers.NewApiSource.ParseTokenUsage(document.RootElement, quotaPerUnit);
 }
 
 static string TestDirectory() => Directory.CreateDirectory(Path.Combine(

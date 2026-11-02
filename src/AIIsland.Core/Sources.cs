@@ -42,7 +42,7 @@ public static class SourceCatalog
         new(Codex, "Codex", true, true, Hint: "读取本机 Codex 登录与 ~/.codex/sessions"),
         new(OpenCode, "OpenCode", true, true, Hint: "读取本机 OpenCode 登录与 opencode.db，可另填 OpenCode Go 密钥"),
         new(DeepSeek, "DeepSeek", true, false, NeedsKey: true, Hint: "DeepSeek 官方 API 密钥，读取账户余额（无需站点地址）"),
-        new(NewApi, "New API 中转站", true, false, NeedsSite: true, NeedsKey: true, Hint: "站点地址 + 令牌，余额与今日扣费"),
+        new(NewApi, "New API 中转站", true, false, NeedsSite: true, NeedsKey: true, Hint: "站点地址 + 令牌，令牌额度与累计扣费"),
         new(Sub2Api, "Sub2API 中转站", true, false, NeedsSite: true, NeedsKey: true, Hint: "站点地址 + 令牌，钱包或订阅额度"),
     };
 
