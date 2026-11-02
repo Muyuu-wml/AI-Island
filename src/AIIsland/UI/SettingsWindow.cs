@@ -30,7 +30,11 @@ public sealed class SettingsWindow : Window
     private readonly CheckBox notifyDone;
     private readonly CheckBox notifyWaiting;
     private readonly CheckBox monitorEnabled;
+    private readonly CheckBox showBattery;
     private readonly CheckBox musicEnabled;
+    private readonly CheckBox weatherEnabled;
+    private readonly CheckBox weatherAqi;
+    private readonly TextBox weatherCity;
     private readonly CheckBox showClock;
     private readonly TextBox quotaThreshold;
     private readonly TextBox balanceThreshold;
@@ -166,10 +170,38 @@ public sealed class SettingsWindow : Window
         stack.Children.Add(Header("系统监控"));
         monitorEnabled = Check("显示 CPU、内存、网络与磁盘", settings.Monitor.Enabled);
         stack.Children.Add(monitorEnabled);
+        showBattery = Check("显示电池电量", settings.Monitor.ShowBattery);
+        stack.Children.Add(showBattery);
 
         stack.Children.Add(Header("音乐"));
         musicEnabled = Check("显示系统媒体会话", settings.Music.Enabled);
         stack.Children.Add(musicEnabled);
+
+        stack.Children.Add(Header("天气"));
+        stack.Children.Add(new TextBlock
+        {
+            Text = "使用 Open-Meteo，无需 API 密钥。城市名例如「北京」「Shanghai」，也可以直接填坐标「39.90,116.40」。",
+            Foreground = new SolidColorBrush(Color.FromRgb(139, 147, 167)),
+            FontSize = 11,
+            TextWrapping = TextWrapping.Wrap,
+            Margin = new Thickness(0, 0, 0, 6),
+        });
+        weatherEnabled = Check("显示天气页", settings.Weather.Enabled);
+        stack.Children.Add(weatherEnabled);
+        weatherCity = Input(settings.Weather.City);
+        stack.Children.Add(Row("城市", weatherCity));
+        weatherAqi = Check("同时显示空气质量（AQI）", settings.Weather.ShowAqi);
+        stack.Children.Add(weatherAqi);
+
+        stack.Children.Add(Header("记事本"));
+        stack.Children.Add(new TextBlock
+        {
+            Text = "纯本地待办：不联网、不需要账号，内容保存在数据目录的 notes.json，随改随存。",
+            Foreground = new SolidColorBrush(Color.FromRgb(139, 147, 167)),
+            FontSize = 11,
+            TextWrapping = TextWrapping.Wrap,
+            Margin = new Thickness(0, 0, 0, 6),
+        });
 
         stack.Children.Add(Header("关于"));
         stack.Children.Add(new TextBlock
@@ -327,7 +359,11 @@ public sealed class SettingsWindow : Window
         settings.Sessions.NotifyWaiting = notifyWaiting.IsChecked == true;
         settings.Sessions.NotifyDone = notifyDone.IsChecked == true;
         settings.Monitor.Enabled = monitorEnabled.IsChecked == true;
+        settings.Monitor.ShowBattery = showBattery.IsChecked == true;
         settings.Music.Enabled = musicEnabled.IsChecked == true;
+        settings.Weather.Enabled = weatherEnabled.IsChecked == true;
+        settings.Weather.City = weatherCity.Text.Trim();
+        settings.Weather.ShowAqi = weatherAqi.IsChecked == true;
         if (double.TryParse(quotaThreshold.Text, NumberStyles.Number, CultureInfo.InvariantCulture, out var percent))
             settings.Alerts.QuotaThreshold = Math.Clamp(percent, 0, 100);
         if (decimal.TryParse(balanceThreshold.Text, NumberStyles.Number, CultureInfo.InvariantCulture, out var balance))

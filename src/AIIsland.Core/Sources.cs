@@ -35,6 +35,9 @@ public static class SourceCatalog
     public const string NewApi = "newapi";
     public const string Sub2Api = "sub2api";
     public const string DeepSeek = "deepseek";
+    public const string OpenRouter = "openrouter";
+    public const string Kimi = "kimi";
+    public const string SiliconFlow = "siliconflow";
 
     public static IReadOnlyList<SourceInfo> All { get; } = new SourceInfo[]
     {
@@ -42,6 +45,9 @@ public static class SourceCatalog
         new(Codex, "Codex", true, true, Hint: "读取本机 Codex 登录与 ~/.codex/sessions"),
         new(OpenCode, "OpenCode", true, true, Hint: "读取本机 OpenCode 登录与 opencode.db，可另填 OpenCode Go 密钥"),
         new(DeepSeek, "DeepSeek", true, false, NeedsKey: true, Hint: "DeepSeek 官方 API 密钥，读取账户余额（无需站点地址）"),
+        new(OpenRouter, "OpenRouter", true, false, NeedsKey: true, Hint: "OpenRouter API 密钥，读取账户余额、累计消费与密钥限额"),
+        new(Kimi, "Kimi（Moonshot）", true, false, NeedsKey: true, Hint: "Moonshot 开放平台 API 密钥，读取账户余额（无需站点地址）"),
+        new(SiliconFlow, "硅基流动", true, false, NeedsKey: true, Hint: "硅基流动 API 密钥，读取账户余额（无需站点地址）"),
         new(NewApi, "New API 中转站", true, false, NeedsSite: true, NeedsKey: true, Hint: "站点地址 + 令牌，令牌额度与累计扣费"),
         new(Sub2Api, "Sub2API 中转站", true, false, NeedsSite: true, NeedsKey: true, Hint: "站点地址 + 令牌，钱包或订阅额度"),
     };
@@ -55,6 +61,9 @@ public static class SourceCatalog
         Codex => new Providers.CodexSource(),
         OpenCode => new Providers.OpenCodeSource(),
         DeepSeek => new Providers.DeepSeekSource(),
+        OpenRouter => new Providers.OpenRouterSource(),
+        Kimi => new Providers.KimiSource(),
+        SiliconFlow => new Providers.SiliconFlowSource(),
         NewApi => new Providers.NewApiSource(),
         Sub2Api => new Providers.Sub2ApiSource(),
         _ => null,

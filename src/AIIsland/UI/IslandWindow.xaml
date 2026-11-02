@@ -8,7 +8,7 @@
         WindowStyle="None" AllowsTransparency="True" Background="Transparent"
         ShowInTaskbar="False" Topmost="True" ResizeMode="NoResize"
         SnapsToDevicePixels="True" UseLayoutRounding="True"
-        MouseEnter="ShellMouseEnter" MouseLeave="ShellMouseLeave" MouseDoubleClick="ShellDoubleClick">
+        MouseEnter="ShellMouseEnter" MouseLeave="ShellMouseLeave">
 
     <Window.Resources>
         <BooleanToVisibilityConverter x:Key="BoolToVis" />
@@ -48,6 +48,58 @@
                 </Setter.Value>
             </Setter>
         </Style>
+        <Style x:Key="NoteDot" TargetType="Button">
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border Background="Transparent" Padding="4,5">
+                            <Ellipse Width="12" Height="12" Fill="{Binding DotBrush}" Stroke="#40FFFFFF" StrokeThickness="1" />
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="NoteClose" TargetType="Button">
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border Background="Transparent" Padding="6,2">
+                            <TextBlock x:Name="glyph" Text="✕" FontSize="10" Foreground="{DynamicResource MutedBrush}" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="glyph" Property="Foreground" Value="#F05252" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style x:Key="GhostIcon" TargetType="Button">
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="bg" Background="Transparent" CornerRadius="6" Padding="5,3">
+                            <TextBlock x:Name="glyph" Text="{TemplateBinding Content}" FontFamily="Segoe MDL2 Assets"
+                                       FontSize="11" Foreground="#B8FFFFFF" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="bg" Property="Background" Value="#33FFFFFF" />
+                                <Setter TargetName="glyph" Property="Foreground" Value="#FFFFFFFF" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="glyph" Property="Opacity" Value="0.35" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
     </Window.Resources>
 
     <Border x:Name="Shell" CornerRadius="0,0,20,20" HorizontalAlignment="Center" VerticalAlignment="Top" ClipToBounds="True"
@@ -80,6 +132,25 @@
                     <TextBlock x:Name="CompactNetUp" Text="{Binding Monitor.CompactUp}" FontSize="10" FontWeight="SemiBold"
                                Foreground="{DynamicResource NetUpBrush}" Margin="6,0,0,0" VerticalAlignment="Center"
                                Visibility="{Binding Monitor.HasNetwork, Converter={StaticResource BoolToVis}}" />
+
+                    <StackPanel x:Name="CompactWeather" Orientation="Horizontal" VerticalAlignment="Center"
+                                ToolTip="{Binding Weather.CompactTip}"
+                                Visibility="{Binding Weather.HasData, Converter={StaticResource BoolToVis}}">
+                        <Rectangle Width="1" Height="14" Fill="{DynamicResource LineBrush}" Margin="10,0,8,0" />
+                        <TextBlock Text="{Binding Weather.Icon}" FontFamily="Segoe UI Emoji" FontSize="11"
+                                   Foreground="{Binding Weather.AccentBrush}" VerticalAlignment="Center" />
+                        <TextBlock Text="{Binding Weather.Temperature}" FontSize="11" FontWeight="SemiBold"
+                                   Foreground="{DynamicResource TextBrush}" Margin="3,0,0,0" VerticalAlignment="Center" />
+                    </StackPanel>
+
+                    <StackPanel x:Name="CompactNotes" Orientation="Horizontal" VerticalAlignment="Center" Margin="8,0,0,0"
+                                ToolTip="{Binding Notes.Count}"
+                                Visibility="{Binding Notes.HasItems, Converter={StaticResource BoolToVis}}">
+                        <TextBlock Text="&#xE73A;" FontFamily="Segoe MDL2 Assets" FontSize="11"
+                                   Foreground="{DynamicResource AccentBrush}" VerticalAlignment="Center" />
+                        <TextBlock Text="{Binding Notes.OpenText}" FontSize="11" FontWeight="SemiBold"
+                                   Foreground="{DynamicResource TextBrush}" Margin="3,0,0,0" VerticalAlignment="Center" />
+                    </StackPanel>
 
                     <TextBlock Text="{Binding Clock}" FontSize="12" FontWeight="SemiBold"
                                Foreground="{DynamicResource TextBrush}" Margin="10,0,0,0" VerticalAlignment="Center" />
@@ -161,6 +232,16 @@
                                              Style="{StaticResource PageTab}" Tag="music" Checked="PageTabChecked"
                                              ToolTip="音乐" AutomationProperties.Name="音乐">
                                     <TextBlock Text="&#xE8D6;" FontFamily="Segoe MDL2 Assets" FontSize="14" />
+                                </RadioButton>
+                                <RadioButton x:Name="TabWeather" GroupName="pages"
+                                             Style="{StaticResource PageTab}" Tag="weather" Checked="PageTabChecked"
+                                             ToolTip="天气" AutomationProperties.Name="天气">
+                                    <TextBlock Text="&#xE706;" FontFamily="Segoe MDL2 Assets" FontSize="14" />
+                                </RadioButton>
+                                <RadioButton x:Name="TabTodo" GroupName="pages"
+                                             Style="{StaticResource PageTab}" Tag="todo" Checked="PageTabChecked"
+                                             ToolTip="待办" AutomationProperties.Name="待办">
+                                    <TextBlock Text="&#xE8FD;" FontFamily="Segoe MDL2 Assets" FontSize="14" />
                                 </RadioButton>
                             </StackPanel>
 
@@ -314,6 +395,8 @@
                         <Border Background="{DynamicResource CardBrush}" CornerRadius="12" Padding="12,9" Margin="0,10,0,0">
                             <StackPanel>
                                 <TextBlock Text="{Binding Monitor.Network}" FontSize="11" FontWeight="SemiBold" />
+                                <TextBlock Text="{Binding Monitor.Battery}" Style="{StaticResource Muted}" FontSize="10" Margin="0,4,0,0"
+                                           Visibility="{Binding Monitor.HasBattery, Converter={StaticResource BoolToVis}}" />
                                 <TextBlock Text="{Binding Monitor.Disks}" Style="{StaticResource Muted}" FontSize="10" Margin="0,4,0,0"
                                            TextTrimming="CharacterEllipsis" Visibility="{Binding Monitor.DisksVisibility}" />
                             </StackPanel>
@@ -539,6 +622,154 @@
                                     </StackPanel>
                                 </Grid>
                             </Grid>
+                        </Border>
+                    </StackPanel>
+
+                    <!-- Weather page -->
+                    <StackPanel x:Name="PageWeather" Visibility="Collapsed">
+                        <Border Background="{Binding Weather.HeroBrush}" CornerRadius="14" Padding="16,14">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <Grid Width="88" Height="88" VerticalAlignment="Top" Margin="0,-10,0,0">
+                                    <Ellipse Fill="{Binding Weather.GlowBrush}" />
+                                    <TextBlock Text="{Binding Weather.Icon}" FontSize="52" FontFamily="Segoe UI Emoji"
+                                               Foreground="{Binding Weather.AccentBrush}"
+                                               HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                </Grid>
+                                <StackPanel Grid.Column="1" Margin="16,0,8,0">
+                                    <StackPanel Orientation="Horizontal">
+                                        <TextBlock Text="{Binding Weather.Temperature}" FontSize="34" FontWeight="SemiBold"
+                                                   Foreground="{Binding Weather.AccentBrush}" />
+                                        <TextBlock Text="{Binding Weather.City}" FontSize="12" Margin="12,0,0,7"
+                                                   VerticalAlignment="Bottom" Foreground="#D9FFFFFF"
+                                                   TextTrimming="CharacterEllipsis" MaxWidth="240" />
+                                    </StackPanel>
+                                    <TextBlock Text="{Binding Weather.Description}" FontSize="12" Foreground="#F2FFFFFF" Margin="0,1,0,0" />
+                                    <TextBlock Text="{Binding Weather.Detail}" FontSize="10" Foreground="#B8FFFFFF"
+                                               Margin="0,4,0,0" TextTrimming="CharacterEllipsis" />
+                                    <WrapPanel Margin="0,8,0,0">
+                                        <Border Background="#33000000" CornerRadius="8" Padding="8,3" Margin="0,0,6,2"
+                                                Visibility="{Binding Weather.HasAqi, Converter={StaticResource BoolToVis}}">
+                                            <TextBlock Text="{Binding Weather.AqiChip}" FontSize="10" FontWeight="SemiBold"
+                                                       Foreground="{Binding Weather.AqiBrush}" />
+                                        </Border>
+                                        <Border Background="#33000000" CornerRadius="8" Padding="8,3" Margin="0,0,6,2"
+                                                Visibility="{Binding Weather.HasUv, Converter={StaticResource BoolToVis}}">
+                                            <TextBlock Text="{Binding Weather.UvChip}" FontSize="10" Foreground="#F2FFFFFF" />
+                                        </Border>
+                                        <TextBlock Text="{Binding Weather.SunLine}" FontSize="10" Foreground="#B8FFFFFF"
+                                                   VerticalAlignment="Center" Margin="2,0,0,2"
+                                                   Visibility="{Binding Weather.HasSun, Converter={StaticResource BoolToVis}}" />
+                                    </WrapPanel>
+                                </StackPanel>
+                                <StackPanel Grid.Column="2" VerticalAlignment="Top" HorizontalAlignment="Right">
+                                    <Button Style="{StaticResource GhostIcon}" Content="&#xE72C;"
+                                            Click="WeatherRefreshClick" ToolTip="立即刷新天气"
+                                            IsEnabled="{Binding Weather.CanRefresh}"
+                                            HorizontalAlignment="Right" />
+                                    <TextBlock Text="{Binding Weather.Updated}" FontSize="9"
+                                               Foreground="#B8FFFFFF" HorizontalAlignment="Right" Margin="0,3,2,0" />
+                                </StackPanel>
+                            </Grid>
+                        </Border>
+
+                        <Border Background="{DynamicResource CardBrush}" CornerRadius="12" Padding="14,8" Margin="0,10,0,0"
+                                Visibility="{Binding Weather.HasData, Converter={StaticResource BoolToVis}}">
+                            <ItemsControl ItemsSource="{Binding Weather.Days}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Grid Margin="0,4">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="42" />
+                                                <ColumnDefinition Width="24" />
+                                                <ColumnDefinition Width="48" />
+                                                <ColumnDefinition Width="32" />
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="34" />
+                                                <ColumnDefinition Width="62" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Text="{Binding Label}" Style="{StaticResource Muted}" FontSize="10" VerticalAlignment="Center" />
+                                            <TextBlock Grid.Column="1" Text="{Binding Icon}" FontSize="15" FontFamily="Segoe UI Emoji"
+                                                       Foreground="{Binding IconBrush}" VerticalAlignment="Center" />
+                                            <TextBlock Grid.Column="2" Text="{Binding Text}" Style="{StaticResource Muted}" FontSize="10"
+                                                       TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                                            <TextBlock Grid.Column="3" Text="{Binding MinText}" Style="{StaticResource Muted}" FontSize="11"
+                                                       TextAlignment="Right" VerticalAlignment="Center" />
+                                            <ProgressBar Grid.Column="4" Style="{StaticResource SlimBar}" Height="4" Maximum="100"
+                                                         Value="{Binding RainValue}" Foreground="{Binding IconBrush}"
+                                                         Margin="8,0" VerticalAlignment="Center" />
+                                            <TextBlock Grid.Column="5" Text="{Binding MaxText}" FontSize="11" FontWeight="SemiBold"
+                                                       TextAlignment="Right" VerticalAlignment="Center" />
+                                            <TextBlock Grid.Column="6" Text="{Binding RainText}" Style="{StaticResource Muted}" FontSize="9"
+                                                       TextAlignment="Right" VerticalAlignment="Center"
+                                                       ToolTip="当天最大降水概率（未来 24 小时）" />
+                                        </Grid>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </Border>
+
+                        <TextBlock Text="{Binding Weather.Message}" Style="{StaticResource Muted}" FontSize="11" TextWrapping="Wrap" Margin="2,10,0,0"
+                                   Visibility="{Binding Weather.HasMessage, Converter={StaticResource BoolToVis}}" />
+                    </StackPanel>
+
+                    <!-- Notes page: local notepad, no account and no network -->
+                    <StackPanel x:Name="PageTodo" Visibility="Collapsed">
+                        <Border Background="{DynamicResource CardBrush}" CornerRadius="12" Padding="14,10">
+                            <StackPanel>
+                                <DockPanel Margin="0,0,0,6">
+                                    <TextBlock DockPanel.Dock="Right" Text="{Binding Notes.Count}" Style="{StaticResource Muted}"
+                                               FontSize="10" VerticalAlignment="Center" />
+                                    <TextBlock Text="记事本" FontSize="11" FontWeight="SemiBold" />
+                                </DockPanel>
+
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <Border Background="#1E2430" CornerRadius="8" Padding="10,0">
+                                        <TextBox x:Name="NoteInput" BorderThickness="0" Background="Transparent"
+                                                 Foreground="{DynamicResource TextBrush}" CaretBrush="{DynamicResource TextBrush}"
+                                                 FontSize="11" Padding="0,7" VerticalContentAlignment="Center" />
+                                    </Border>
+                                    <Button Grid.Column="1" Content="添加" Style="{StaticResource SolidButton}"
+                                            Margin="8,0,0,0" Padding="12,4" Click="NoteAddClick" />
+                                </Grid>
+                                <TextBlock Text="输入后按 Enter 添加；点圆点标记完成，✕ 删除" Style="{StaticResource Muted}"
+                                           FontSize="9" Margin="1,5,0,0" />
+
+                                <ItemsControl ItemsSource="{Binding Notes.Items}" Margin="0,3,0,0">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Grid Margin="0,1">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="Auto" />
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                </Grid.ColumnDefinitions>
+                                                <Button Style="{StaticResource NoteDot}" Tag="{Binding Id}"
+                                                        Click="NoteToggleClick" ToolTip="标记完成 / 取消完成"
+                                                        VerticalAlignment="Center" />
+                                                <TextBlock Grid.Column="1" Text="{Binding Text}" FontSize="11" Margin="4,0,8,0"
+                                                           TextWrapping="Wrap" VerticalAlignment="Center"
+                                                           Foreground="{Binding TextBrush}" TextDecorations="{Binding Decorations}"
+                                                           Opacity="{Binding Opacity}" />
+                                                <Button Grid.Column="2" Style="{StaticResource NoteClose}" Tag="{Binding Id}"
+                                                        Click="NoteDeleteClick" ToolTip="删除" VerticalAlignment="Center" />
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+
+                                <Button Content="清除已完成" Style="{StaticResource SolidButton}" FontSize="10" Padding="10,3"
+                                        HorizontalAlignment="Right" Margin="0,6,0,0" Click="NoteClearDoneClick"
+                                        Visibility="{Binding Notes.HasItems, Converter={StaticResource BoolToVis}}" />
+                            </StackPanel>
                         </Border>
                     </StackPanel>
                     </Grid>

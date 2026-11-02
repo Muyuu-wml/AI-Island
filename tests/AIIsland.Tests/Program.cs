@@ -46,6 +46,12 @@ Check("permission reply file", PermissionReply());
 Check("settings roundtrip", Roundtrip());
 Check("secrets roundtrip", Secrets());
 Check("deepseek balance", DeepSeekBalance());
+Check("openrouter credits", OpenRouterBalance());
+Check("kimi wallet", KimiBalance());
+Check("siliconflow wallet", SiliconFlowBalance());
+Check("weather forecast", WeatherParse());
+Check("weather code text", WeatherService.Describe(61).Text == "小雨" && WeatherService.Describe(0, false).Text == "晴夜");
+Check("notes roundtrip", NotesRoundtrip());
 Check("newapi unlimited token is not an account balance", NewApiQuota(
     """{"unlimited_quota":true,"total_available":-43595837,"total_used":43595837}""", 500000)
     .SequenceEqual(new[] { new QuotaLine("令牌额度", null, "不限额"), new QuotaLine("累计", null, "$87.19", "已用") }));
@@ -170,8 +176,77 @@ static bool DeepSeekBalance()
            && lines[2].Value == "¥100.00";
 }
 
-static bool Secrets()
+static bool OpenRouterBalance()
 {
+    using var document = System.Text.Json.JsonDocument.Parse(
+        """{"data":{"total_credits":10,"total_usage":2.5}}""");
+    var lines = AIIsland.Core.Providers.OpenRouterSource.Parse(document.RootElement);
+    return lines.Count == 2 && lines[0].Value == "$7.50" && lines[1].Value == "$2.50";
+}
+
+static bool KimiBalance()
+{
+    using var document = System.Text.Json.JsonDocument.Parse(
+        """{"code":0,"status":true,"data":{"available_balance":49.58,"voucher_balance":46.58,"cash_balance":3}}""");
+    var lines = AIIsland.Core.Providers.KimiSource.Parse(document.RootElement);
+    return lines.Count == 3 && lines[0].Value == "¥49.58" && lines[2].Title == "现金余额";
+}
+
+static bool SiliconFlowBalance()
+{
+    using var document = System.Text.Json.JsonDocument.Parse(
+        """{"code":20000,"data":{"balance":"1.20","chargeBalance":"1.20","totalBalance":"1.20"}}""");
+    var lines = AIIsland.Core.Providers.SiliconFlowSource.Parse(document.RootElement);
+    return lines.Count == 2 && lines[0].Value == "¥1.20";
+}
+
+static bool WeatherParse()
+{
+    using var document = System.Text.Json.JsonDocument.Parse(
+        """
+        {"current":{"temperature_2m":21.5,"apparent_temperature":20.1,"relative_humidity_2m":45,
+                    "weather_code":3,"is_day":1,"wind_speed_10m":2.4},
+         "daily":{"time":["2026-11-02","2026-11-03"],"weather_code":[3,61],
+                  "temperature_2m_max":[20,18],"temperature_2m_min":[11,9],
+                  "precipitation_probability_max":[10,80],
+                  "sunrise":["2026-11-02T06:41","2026-11-03T06:42"],
+                  "sunset":["2026-11-02T17:12","2026-11-03T17:11"],
+                  "uv_index_max":[3.4,1.2]}}
+        """);
+    var reading = WeatherService.Parse(document.RootElement);
+    return reading is { Now: { } now, Days: { Count: 2 } days }
+           && now.Temperature == 21.5 && now.IsDay && days[1].Precipitation == 80
+           && days[0].Date == new DateOnly(2026, 11, 2)
+           && days[0].Sunrise == "06:41" && days[1].Sunset == "17:11" && days[0].Uv == 3.4;
+}
+
+static bool NotesRoundtrip()
+{
+    var directory = TestDirectory();
+    try
+    {
+        var store = new NoteStore(directory);
+        var first = store.Add(" 买牛奶 ");
+        var second = store.Add("写周报");
+        store.Toggle(second.Id);
+        store.Remove(first.Id);
+
+        var reopened = new NoteStore(directory);
+        var saved = reopened.Items.SingleOrDefault();
+        var ok = first.Text == "买牛奶"
+                 && saved is { Text: "写周报", Done: true }
+                 && File.ReadAllText(Path.Combine(directory, "notes.json")).Contains("写周报");
+
+        reopened.ClearDone();
+        return ok && new NoteStore(directory).Items.Count == 0;
+    }
+    finally
+    {
+        Directory.Delete(directory, true);
+    }
+}
+
+static bool Secrets(){
     var directory = TestDirectory();
     try
     {

@@ -29,12 +29,13 @@ public sealed class IslandSettings
     public int TopOffset { get; set; } = 0;
     /// <summary>Monitor device name such as \\.\DISPLAY2; null means the primary screen.</summary>
     public string? Display { get; set; }
-    public List<string> PageOrder { get; set; } = new() { "ai", "system", "music" };
+    public List<string> PageOrder { get; set; } = new() { "ai", "system", "music", "weather", "todo" };
     public AppearanceSettings Appearance { get; set; } = new();
     public List<ColumnSettings> Columns { get; set; } = CreateDefaultColumns();
     public SessionSettings Sessions { get; set; } = new();
     public MonitorSettings Monitor { get; set; } = new();
     public MusicSettings Music { get; set; } = new();
+    public WeatherSettings Weather { get; set; } = new();
     public AlertSettings Alerts { get; set; } = new();
 
     public static List<ColumnSettings> CreateDefaultColumns() => new()
@@ -83,7 +84,17 @@ public sealed class MonitorSettings
     public bool ShowMemory { get; set; } = true;
     public bool ShowNetwork { get; set; } = true;
     public bool ShowDisks { get; set; } = true;
+    public bool ShowBattery { get; set; } = true;
     public int IntervalMs { get; set; } = 1500;
+}
+
+public sealed class WeatherSettings
+{
+    public bool Enabled { get; set; }
+
+    /// <summary>City name ("北京") or an explicit "lat,lon" pair.</summary>
+    public string City { get; set; } = "";
+    public bool ShowAqi { get; set; } = true;
 }
 
 public sealed class MusicSettings
@@ -144,6 +155,8 @@ public sealed class SettingsStore
         settings.Columns ??= new List<ColumnSettings>();
         settings.Alerts ??= new AlertSettings();
         settings.Sessions ??= new SessionSettings();
+        settings.Weather ??= new WeatherSettings();
+        settings.Weather.City ??= "";
         settings.Sessions.KeepMinutes = Math.Clamp(settings.Sessions.KeepMinutes, 1, 1440);
         if (settings.Columns.Count == 0) settings.Columns = IslandSettings.CreateDefaultColumns();
         settings.PageOrder = NormalizePageOrder(settings.PageOrder);
@@ -152,7 +165,7 @@ public sealed class SettingsStore
 
     public static List<string> NormalizePageOrder(IEnumerable<string>? order)
     {
-        var known = new[] { "ai", "system", "music" };
+        var known = new[] { "ai", "system", "music", "weather", "todo" };
         var result = new List<string>();
         foreach (var id in order ?? Enumerable.Empty<string>())
             if (known.Contains(id) && !result.Contains(id)) result.Add(id);

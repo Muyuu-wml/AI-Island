@@ -195,6 +195,8 @@ public sealed class MonitorVm : Observable
     private string memory = "--";
     private string network = "";
     private string disks = "";
+    private string battery = "";
+    private bool hasBattery;
     private double cpuPercent;
     private double memoryPercent;
     private string compactDown = "";
@@ -207,6 +209,8 @@ public sealed class MonitorVm : Observable
     public string Memory { get => memory; set => Set(ref memory, value); }
     public string Network { get => network; set => Set(ref network, value); }
     public string Disks { get => disks; set => Set(ref disks, value); }
+    public string Battery { get => battery; set => Set(ref battery, value); }
+    public bool HasBattery { get => hasBattery; set => Set(ref hasBattery, value); }
     public double CpuPercent { get => cpuPercent; set => Set(ref cpuPercent, value); }
     public double MemoryPercent { get => memoryPercent; set => Set(ref memoryPercent, value); }
 
@@ -249,6 +253,21 @@ public sealed class MonitorVm : Observable
             ? string.Join("   ", sample.Disks.Select(d => $"{d.Name} {Human.Bytes(d.Total - d.Used)} 可用"))
             : "";
         Raise(nameof(DisksVisibility));
+
+        if (settings.ShowBattery && sample.Battery is { } battery)
+        {
+            var state = battery.Charging ? "充电中"
+                : battery.OnAc ? "已接电源"
+                : battery.MinutesLeft is { } minutes ? minutes >= 60 ? $"约 {minutes / 60} 小时 {minutes % 60} 分" : $"约 {minutes} 分"
+                : "";
+            Battery = "电池 " + battery.Percent + "%" + (state.Length > 0 ? " · " + state : "");
+            HasBattery = true;
+        }
+        else
+        {
+            Battery = "";
+            HasBattery = false;
+        }
 
         if (!settings.ShowCpu) Cpu = "";
         if (!settings.ShowMemory) Memory = "";
@@ -311,6 +330,263 @@ public sealed class ProcessVm : Observable
     public Visibility InitialVisibility => Icon is null ? Visibility.Visible : Visibility.Collapsed;
 }
 
+public sealed class WeatherDayVm
+{
+    public string Label { get; init; } = "";
+    public string Text { get; init; } = "";
+    public string Icon { get; init; } = "";
+    public string MaxText { get; init; } = "";
+    public string MinText { get; init; } = "";
+    public string RainText { get; init; } = "";
+    public double RainValue { get; init; }
+    public bool HasRain { get; init; }
+    public Brush IconBrush { get; init; } = Brushes.White;
+}
+
+public sealed class WeatherVm : Observable
+{
+    private string city = "";
+    private string temperature = "--";
+    private string description = "";
+    private string compactTip = "";
+    private string icon = "☁";
+    private string detail = "";
+    private string updated = "";
+    private string message = "";
+    private string sunLine = "";
+    private string aqiChip = "";
+    private string uvChip = "";
+    private bool hasData;
+    private bool hasMessage;
+    private bool hasSun;
+    private bool hasAqi;
+    private bool hasUv;
+    private bool refreshing;
+    private Brush heroBrush = Gradient("#C95B6B84", "#21313A48", "#C7D2E3");
+    private Brush accentBrush = Theme.Brush("#C7D2E3");
+    private Brush glowBrush = Glow("#C7D2E3");
+    private Brush aqiBrush = Theme.Brush("#8B93A7");
+
+    public ObservableCollection<WeatherDayVm> Days { get; } = new();
+
+    public string City { get => city; set => Set(ref city, value); }
+    public string Temperature { get => temperature; set => Set(ref temperature, value); }
+    public string Description { get => description; set => Set(ref description, value); }
+    public string CompactTip { get => compactTip; set => Set(ref compactTip, value); }
+    public string Icon { get => icon; set => Set(ref icon, value); }
+    public string Detail { get => detail; set => Set(ref detail, value); }
+    public string Updated { get => updated; set => Set(ref updated, value); }
+    public string Message { get => message; set => Set(ref message, value); }
+    public string SunLine { get => sunLine; set => Set(ref sunLine, value); }
+    public string AqiChip { get => aqiChip; set => Set(ref aqiChip, value); }
+    public string UvChip { get => uvChip; set => Set(ref uvChip, value); }
+    public bool HasData { get => hasData; set => Set(ref hasData, value); }
+    public bool HasMessage { get => hasMessage; set => Set(ref hasMessage, value); }
+    public bool HasSun { get => hasSun; set => Set(ref hasSun, value); }
+    public bool HasAqi { get => hasAqi; set => Set(ref hasAqi, value); }
+    public bool HasUv { get => hasUv; set => Set(ref hasUv, value); }
+    public bool Refreshing
+    {
+        get => refreshing;
+        set
+        {
+            if (Set(ref refreshing, value)) Raise(nameof(CanRefresh));
+        }
+    }
+    public bool CanRefresh => !refreshing;
+    public Brush HeroBrush { get => heroBrush; set => Set(ref heroBrush, value); }
+    public Brush AccentBrush { get => accentBrush; set => Set(ref accentBrush, value); }
+    public Brush GlowBrush { get => glowBrush; set => Set(ref glowBrush, value); }
+    public Brush AqiBrush { get => aqiBrush; set => Set(ref aqiBrush, value); }
+
+    public void Update(WeatherReading reading)
+    {
+        if (reading.State != SourceState.Ok || reading.Now is not { } now)
+        {
+            HasData = false;
+            CompactTip = "";
+            Message = reading.State == SourceState.Error ? reading.Error ?? "读取失败" : reading.Status;
+            HasMessage = !string.IsNullOrEmpty(Message);
+            return;
+        }
+
+        var (text, glyph) = WeatherService.Describe(now.Code, now.IsDay);
+        var (top, bottom, accent) = WeatherService.Palette(now.Code, now.IsDay);
+        City = reading.City;
+        Temperature = now.Temperature.ToString("0") + "°";
+        Description = text;
+        Icon = glyph;
+        HeroBrush = Gradient(top, bottom, accent);
+        AccentBrush = Theme.Brush(accent);
+        GlowBrush = Glow(accent);
+        Detail = $"体感 {now.FeelsLike:0}° · 湿度 {now.Humidity:0}% · 风 {now.Wind:0.#} m/s";
+        Updated = "更新于 " + reading.At.ToString("HH:mm");
+        CompactTip = $"{City} · {Description} {Temperature}";
+
+        var days = reading.Days ?? Array.Empty<WeatherDay>();
+        var first = days.Count > 0 ? days[0] : null;
+        SunLine = first is { Sunrise.Length: > 0, Sunset.Length: > 0 } sun
+            ? $"日出 {sun.Sunrise} · 日落 {sun.Sunset}"
+            : "";
+        HasSun = SunLine.Length > 0;
+
+        if (reading.Aqi is { } aqi)
+        {
+            AqiChip = $"空气 {aqi:0} {WeatherService.AqiText(aqi)}";
+            AqiBrush = Theme.Brush(WeatherService.AqiColor(aqi));
+            HasAqi = true;
+        }
+        else
+        {
+            AqiChip = "";
+            HasAqi = false;
+        }
+
+        if (first?.Uv is { } uv)
+        {
+            UvChip = $"紫外线 {uv:0.#} {UvText(uv)}";
+            HasUv = true;
+        }
+        else
+        {
+            UvChip = "";
+            HasUv = false;
+        }
+
+        Days.Clear();
+        foreach (var day in days)
+        {
+            var (dayText, dayGlyph) = WeatherService.Describe(day.Code);
+            var (_, _, dayAccent) = WeatherService.Palette(day.Code, true);
+            Days.Add(new WeatherDayVm
+            {
+                Label = Label(day.Date),
+                Text = dayText,
+                Icon = dayGlyph,
+                MaxText = $"{day.Max:0}°",
+                MinText = $"{day.Min:0}°",
+                RainText = day.Precipitation is { } rain ? $"降水 {rain:0}%" : "无降水",
+                RainValue = day.Precipitation ?? 0,
+                HasRain = day.Precipitation is > 0,
+                IconBrush = Theme.Brush(dayAccent),
+            });
+        }
+
+        HasData = true;
+        Message = "";
+        HasMessage = false;
+    }
+
+    private static string UvText(double uv) => uv switch
+    {
+        < 3 => "弱",
+        < 6 => "中等",
+        < 8 => "较强",
+        < 11 => "很强",
+        _ => "极强",
+    };
+
+    /// <summary>Diagonal three-stop gradient used as the hero card background.</summary>
+    private static Brush Gradient(string top, string bottom, string? accent = null)
+    {
+        try
+        {
+            var brush = new LinearGradientBrush
+            {
+                StartPoint = new Point(0, 0),
+                EndPoint = new Point(1, 1),
+            };
+            brush.GradientStops.Add(new GradientStop((Color)ColorConverter.ConvertFromString(top)!, 0));
+            if (accent is not null && ColorConverter.ConvertFromString(accent) is Color middle)
+                brush.GradientStops.Add(new GradientStop(Color.FromArgb(0x7A, middle.R, middle.G, middle.B), 0.5));
+            brush.GradientStops.Add(new GradientStop((Color)ColorConverter.ConvertFromString(bottom)!, 1));
+            brush.Freeze();
+            return brush;
+        }
+        catch
+        {
+            return Theme.Brush(top);
+        }
+    }
+
+    /// <summary>Soft radial halo behind the hero icon, matching the condition accent.</summary>
+    private static Brush Glow(string accent)
+    {
+        try
+        {
+            var color = (Color)ColorConverter.ConvertFromString(accent)!;
+            var brush = new RadialGradientBrush
+            {
+                GradientOrigin = new Point(0.5, 0.5),
+                Center = new Point(0.5, 0.5),
+                RadiusX = 0.5,
+                RadiusY = 0.5,
+            };
+            brush.GradientStops.Add(new GradientStop(Color.FromArgb(0x66, color.R, color.G, color.B), 0));
+            brush.GradientStops.Add(new GradientStop(Color.FromArgb(0x00, color.R, color.G, color.B), 1));
+            brush.Freeze();
+            return brush;
+        }
+        catch
+        {
+            return Brushes.Transparent;
+        }
+    }
+
+    private static string Label(DateOnly date)
+    {
+        var today = DateOnly.FromDateTime(DateTime.Now);
+        if (date == today) return "今天";
+        if (date == today.AddDays(1)) return "明天";
+        return "周" + "日一二三四五六"[(int)date.DayOfWeek];
+    }
+}
+
+public sealed class NoteRowVm
+{
+    public string Id { get; init; } = "";
+    public string Text { get; init; } = "";
+    public bool Done { get; init; }
+    public Brush TextBrush { get; init; } = Brushes.White;
+    public Brush DotBrush { get; init; } = Brushes.Gray;
+    public TextDecorationCollection? Decorations { get; init; }
+    public double Opacity => Done ? 0.55 : 1;
+}
+
+public sealed class NotesVm : Observable
+{
+    private string count = "";
+    private string openText = "";
+    private bool hasItems;
+
+    public ObservableCollection<NoteRowVm> Items { get; } = new();
+    public string Count { get => count; set => Set(ref count, value); }
+    public string OpenText { get => openText; set => Set(ref openText, value); }
+    public bool HasItems { get => hasItems; set => Set(ref hasItems, value); }
+
+    public void Update(IReadOnlyList<NoteItem> notes)
+    {
+        Items.Clear();
+        foreach (var note in notes.OrderBy(note => note.Done).ThenByDescending(note => note.At))
+            Items.Add(new NoteRowVm
+            {
+                Id = note.Id,
+                Text = note.Text,
+                Done = note.Done,
+                TextBrush = Theme.Brush(note.Done ? "#6B7280" : "#F2F4F8"),
+                DotBrush = Theme.Brush(note.Done ? "#34D399" : "#5B8CFF"),
+                Decorations = note.Done ? TextDecorations.Strikethrough : null,
+            });
+
+        var open = notes.Count(note => !note.Done);
+        Count = notes.Count == 0
+            ? "空"
+            : open == 0 ? $"全部完成 · 共 {notes.Count} 项" : $"{open} 项未完成 · 共 {notes.Count} 项";
+        OpenText = open == 0 ? "\u2713" : open.ToString();
+        HasItems = notes.Count > 0;
+    }
+}
+
 public sealed class MusicVm : Observable
 {
     private string title = "未在播放";
@@ -365,6 +641,8 @@ public sealed class IslandViewModel : Observable
     public ObservableCollection<ProcessVm> Processes { get; } = new();
     public MonitorVm Monitor { get; } = new();
     public MusicVm Music { get; } = new();
+    public WeatherVm Weather { get; } = new();
+    public NotesVm Notes { get; } = new();
 
     public string Clock { get => clock; set => Set(ref clock, value); }
     public bool HasSessions { get => hasSessions; set => Set(ref hasSessions, value); }

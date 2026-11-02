@@ -12,6 +12,7 @@ public sealed record MonitorSample(
     double? DownBytesPerSecond,
     double? UpBytesPerSecond,
     IReadOnlyList<DiskInfo> Disks,
+    BatteryInfo? Battery,
     DateTimeOffset At);
 
 public sealed class SystemMonitor
@@ -51,7 +52,11 @@ public sealed class SystemMonitor
         previousAt = now;
         primed = true;
 
-        return new MonitorSample(cpu, memory.Used, memory.Total, down, up, includeDisks ? ReadDisks() : Array.Empty<DiskInfo>(), now);
+        return new MonitorSample(
+            cpu, memory.Used, memory.Total, down, up,
+            includeDisks ? ReadDisks() : Array.Empty<DiskInfo>(),
+            Battery.Read(),
+            now);
     }
 
     private double? Calculate(ulong idle, ulong kernel, ulong user)

@@ -24,10 +24,13 @@ public partial class IslandWindow : Window
     private readonly SystemMonitor monitor = new();
     private readonly ProcessMonitor processes = new();
     private readonly MusicService music = new();
+    private readonly WeatherService weather = new();
+    private readonly NoteStore notes = new();
     private readonly IslandViewModel vm = new();
     private readonly DispatcherTimer fast;
     private readonly Dictionary<string, SessionState> lastStates = new();
     private readonly HashSet<string> activeAlerts = new();
+    private readonly List<PageEntry> pages = new();
     private System.Threading.Mutex? sessionSignal;
     private int settingsVersion;
     private const double ExpandedWidth = 620;
@@ -37,13 +40,14 @@ public partial class IslandWindow : Window
     private DateTime lastQuota = DateTime.MinValue;
     private DateTime lastMonitor = DateTime.MinValue;
     private DateTime lastMusic = DateTime.MinValue;
+    private DateTime lastWeather = DateTime.MinValue;
+    private bool weatherBusy;
     private DateTime sizeAnimUntil = DateTime.MinValue;
     private int sizeAnimVersion;
     private double compactWidth = 400;
     private double compactHeight = 44;
     private bool refreshing;
     private bool expanded;
-    private bool pinned;
     private bool hiddenForFullscreen;
     private int monitorTicks;
     private int page;
@@ -61,11 +65,21 @@ public partial class IslandWindow : Window
 
         InitializeComponent();
         DataContext = vm;
+        vm.Notes.Update(notes.Items);
+
+        pages.AddRange(new[]
+        {
+            new PageEntry("ai", TabAi, PageAi),
+            new PageEntry("system", TabSystem, PageSystem),
+            new PageEntry("music", TabMusic, PageMusic),
+            new PageEntry("weather", TabWeather, PageWeather),
+            new PageEntry("todo", TabTodo, PageTodo),
+        });
 
         ExpandedPanel.RenderTransform = new TranslateTransform(0, 10);
         ExpandedPanel.Opacity = 0;
-        foreach (var panel in new FrameworkElement[] { PageAi, PageSystem, PageMusic })
-            panel.RenderTransform = new TranslateTransform();
+        foreach (var page in pages)
+            page.Panel.RenderTransform = new TranslateTransform();
         ApplyTabOrder();
 
         ApplyAppearance();
@@ -85,7 +99,7 @@ public partial class IslandWindow : Window
             _ = RefreshColumnsAsync();
         };
 
-        PreviewKeyDown += (_, e) => { if (e.Key == Key.Escape) Collapse(); };
+        PreviewKeyDown += ShellPreviewKeyDown;
         Microsoft.Win32.SystemEvents.DisplaySettingsChanged += OnDisplaySettingsChanged;
         Closing += (_, _) =>
         {
@@ -128,9 +142,9 @@ public partial class IslandWindow : Window
 
         compactWidth = settings.Style switch
         {
-            CompactStyle.Capsule => 450,
-            CompactStyle.Indicator => 320,
-            _ => 460,
+            CompactStyle.Capsule => 520,
+            CompactStyle.Indicator => 400,
+            _ => 530,
         };
         compactHeight = CompactHeightBase;
         if (!expanded) SetSize(compactWidth, compactHeight);
@@ -202,25 +216,25 @@ public partial class IslandWindow : Window
             });
     }
 
-    private FrameworkElement PageAt(int index) => index switch
-    {
-        1 => PageSystem,
-        2 => PageMusic,
-        _ => PageAi,
-    };
+    private sealed record PageEntry(string Id, RadioButton Tab, FrameworkElement Panel);
 
-    private RadioButton TabAt(int index) => index switch
-    {
-        1 => TabSystem,
-        2 => TabMusic,
-        _ => TabAi,
-    };
+    private FrameworkElement PageAt(int index) =>
+        index >= 0 && index < pages.Count ? pages[index].Panel : PageAi;
 
-    private RadioButton TabById(string id) => id switch
+    private RadioButton TabAt(int index) =>
+        index >= 0 && index < pages.Count ? pages[index].Tab : TabAi;
+
+    private RadioButton? TabById(string id) =>
+        pages.FirstOrDefault(page => string.Equals(page.Id, id, StringComparison.OrdinalIgnoreCase))?.Tab;
+
+    private int PageIndexOf(string? id) =>
+        pages.FindIndex(page => string.Equals(page.Id, id, StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>Weather only takes a tab when it is switched on in the settings.</summary>
+    private bool PageEnabled(int index) => index >= 0 && index < pages.Count && pages[index].Id switch
     {
-        "system" => TabSystem,
-        "music" => TabMusic,
-        _ => TabAi,
+        "weather" => settings.Weather.Enabled,
+        _ => true,
     };
 
     private static string IdOf(FrameworkElement tab) => tab.Tag as string ?? "ai";
@@ -232,17 +246,26 @@ public partial class IslandWindow : Window
 
         // Re-adding radios to the panel can make WPF re-evaluate the group, so keep
         // the checked handler detached until the final selection is in place.
-        TabAi.Checked -= PageTabChecked;
-        TabSystem.Checked -= PageTabChecked;
-        TabMusic.Checked -= PageTabChecked;
+        foreach (var entry in pages) entry.Tab.Checked -= PageTabChecked;
 
         TabsPanel.Children.Clear();
-        foreach (var id in order) TabsPanel.Children.Add(TabById(id));
+        foreach (var id in order)
+        {
+            var index = PageIndexOf(id);
+            if (index < 0 || !PageEnabled(index)) continue;
+            TabsPanel.Children.Add(pages[index].Tab);
+        }
+        if (TabsPanel.Children.Count == 0) TabsPanel.Children.Add(TabAi);
+
+        if (!PageEnabled(page))
+        {
+            foreach (var entry in pages) entry.Panel.Visibility = Visibility.Collapsed;
+            page = 0;
+            PageAi.Visibility = Visibility.Visible;
+        }
         TabAt(page).IsChecked = true;
 
-        TabAi.Checked += PageTabChecked;
-        TabSystem.Checked += PageTabChecked;
-        TabMusic.Checked += PageTabChecked;
+        foreach (var entry in pages) entry.Tab.Checked += PageTabChecked;
     }
 
     private static RadioButton? FindTab(DependencyObject? element)
@@ -403,16 +426,9 @@ public partial class IslandWindow : Window
         if (sender is FrameworkElement { Tag: string id }) ShowPage(PageIndexOf(id));
     }
 
-    private static int PageIndexOf(string id) => id switch
-    {
-        "system" => 1,
-        "music" => 2,
-        _ => 0,
-    };
-
     private void ShowPage(int index)
     {
-        if (index == page) return;
+        if (index < 0 || index >= pages.Count || index == page) return;
         var old = PageAt(page);
         var next = PageAt(index);
         page = index;
@@ -492,6 +508,10 @@ public partial class IslandWindow : Window
         }
 
         if (DateTime.Now - lastQuota > TimeSpan.FromSeconds(60)) _ = RefreshColumnsAsync();
+        // Retry quickly after a failure so a cold-start network hiccup does not leave the
+        // card empty for a whole refresh cycle.
+        var weatherEvery = vm.Weather.HasData ? TimeSpan.FromMinutes(15) : TimeSpan.FromMinutes(2);
+        if (settings.Weather.Enabled && DateTime.Now - lastWeather > weatherEvery) _ = RefreshWeatherAsync();
         if (settings.HideInFullscreen) CheckFullscreen();
 
         if (expanded && DateTime.Now > sizeAnimUntil)
@@ -590,6 +610,86 @@ public partial class IslandWindow : Window
                 Tray?.Notify("AI Island · 额度预警", alert.Message);
     }
 
+    private async void WeatherRefreshClick(object sender, RoutedEventArgs e)
+    {
+        lastWeather = DateTime.MinValue;
+        await RefreshWeatherAsync();
+    }
+
+    private async Task RefreshWeatherAsync()
+    {
+        if (weatherBusy) return;
+        weatherBusy = true;
+        vm.Weather.Refreshing = true;
+        lastWeather = DateTime.Now;
+        try
+        {
+            var reading = await weather.ReadAsync(settings.Weather.City, settings.Weather.ShowAqi, lifetime.Token);
+            vm.Weather.Update(reading);
+            if (reading.State == SourceState.Error && !string.IsNullOrEmpty(reading.Error))
+                AppLog.Write(new InvalidOperationException("天气刷新失败：" + reading.Error));
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception e)
+        {
+            AppLog.Write(e);
+            vm.Weather.Update(WeatherReading.Failure(e.Message));
+        }
+        finally
+        {
+            weatherBusy = false;
+            vm.Weather.Refreshing = false;
+        }
+    }
+
+    private void ShellPreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Escape)
+        {
+            Collapse();
+            return;
+        }
+
+        // Enter adds a note. IME composition reports Key.ImeProcessed instead, so
+        // confirming Chinese input does not accidentally submit the text box.
+        if (e.Key == Key.Enter && NoteInput.IsKeyboardFocusWithin)
+        {
+            e.Handled = true;
+            NoteAdd();
+        }
+    }
+
+    private void NoteAddClick(object sender, RoutedEventArgs e) => NoteAdd();
+
+    private void NoteAdd()
+    {
+        var text = NoteInput.Text.Trim();
+        if (text.Length == 0) return;
+        notes.Add(text);
+        NoteInput.Clear();
+        vm.Notes.Update(notes.Items);
+    }
+
+    private void NoteToggleClick(object sender, RoutedEventArgs e)
+    {
+        if (sender is not FrameworkElement { Tag: string id }) return;
+        notes.Toggle(id);
+        vm.Notes.Update(notes.Items);
+    }
+
+    private void NoteDeleteClick(object sender, RoutedEventArgs e)
+    {
+        if (sender is not FrameworkElement { Tag: string id }) return;
+        notes.Remove(id);
+        vm.Notes.Update(notes.Items);
+    }
+
+    private void NoteClearDoneClick(object sender, RoutedEventArgs e)
+    {
+        notes.ClearDone();
+        vm.Notes.Update(notes.Items);
+    }
+
     private void EnsureColumns()
     {
         if (vm.Columns.Count == settings.Columns.Count &&
@@ -645,10 +745,14 @@ public partial class IslandWindow : Window
     /// </summary>
     private void ShowPageAt(Point point)
     {
-        var index = 0;
-        if (CompactMusicBars.IsVisible && InBand(CompactMusicBars, point.X, 8)) index = 2;
-        else if (point.X >= LeftOf(CompactStats)) index = 1;
-        if (index == page) return;
+        var id = "ai";
+        if (CompactMusicBars.IsVisible && InBand(CompactMusicBars, point.X, 8)) id = "music";
+        else if (CompactWeather.IsVisible && InBand(CompactWeather, point.X, 4)) id = "weather";
+        else if (CompactNotes.IsVisible && InBand(CompactNotes, point.X, 4)) id = "todo";
+        else if (point.X >= LeftOf(CompactStats)) id = "system";
+
+        var index = PageIndexOf(id);
+        if (index < 0 || index == page || !PageEnabled(index)) return;
 
         // The panel is still collapsed, so switch instantly instead of running the tab animation.
         var old = PageAt(page);
@@ -676,7 +780,6 @@ public partial class IslandWindow : Window
 
     private void ShellMouseLeave(object sender, MouseEventArgs e)
     {
-        if (pinned) return;
         Dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(() =>
         {
             if (!IsMouseOver) Collapse();
@@ -690,14 +793,6 @@ public partial class IslandWindow : Window
     }
 
     private void CollapseClick(object sender, RoutedEventArgs e) => Collapse();
-
-    private void ShellDoubleClick(object sender, MouseButtonEventArgs e)
-    {
-        pinned = !pinned;
-        if (pinned) Expand();
-        else if (!IsMouseOver) Collapse();
-        e.Handled = true;
-    }
 
     private void ShellRightClick(object sender, MouseButtonEventArgs e)
     {
@@ -849,10 +944,13 @@ public partial class IslandWindow : Window
             ApplySessionSettings();
             StartupRegistration.Apply(settings.StartWithWindows);
             ApplyAppearance();
+            ApplyTabOrder();
             Place();
             vm.Columns.Clear();
             EnsureColumns();
+            lastWeather = DateTime.MinValue;
             _ = RefreshColumnsAsync();
+            _ = RefreshWeatherAsync();
         };
         window.ShowDialog();
     }
